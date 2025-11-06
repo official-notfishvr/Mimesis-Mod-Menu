@@ -14,7 +14,7 @@ namespace fishmods
                 {
                     // The resource name is YourProjectNamespace.Libs.shadcnui.dll
                     // The name is constructed from the default namespace and the path to the file.
-                    using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("fishmods.Libs.shadcnui.dll"))
+                    using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("MIMESIS_Mod_Menu.Libs.shadcnui.dll"))
                     {
                         if (stream == null) return null;
                         byte[] assemblyData = new byte[stream.Length];

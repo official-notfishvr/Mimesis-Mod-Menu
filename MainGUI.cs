@@ -402,6 +402,13 @@ public class MainGUI : MonoBehaviour
     {
         Harmony harmony = new Harmony("com.mod.patches");
 
+        var originalOnDamaged = AccessTools.Method(typeof(StatManager), "OnDamaged");
+        if (originalOnDamaged != null)
+        {
+            var prefixOnDamaged = new HarmonyMethod(typeof(MainGUI), nameof(PrefixOnDamaged));
+            harmony.Patch(originalOnDamaged, prefixOnDamaged);
+        }
+
         var originalConsumeStamina = AccessTools.Method(typeof(StatManager), "ConsumeStamina");
         if (originalConsumeStamina != null)
         {
@@ -415,6 +422,20 @@ public class MainGUI : MonoBehaviour
             var prefixCheckFallDamage = new HarmonyMethod(typeof(MainGUI), nameof(PrefixCheckFallDamage));
             harmony.Patch(originalCheckFallDamage, prefixCheckFallDamage);
         }
+    }
+
+    static bool PrefixOnDamaged(object __instance, object args)
+    {
+        if (godModeEnabled)
+        {
+            object victim = ModHelper.GetFieldValue(args, "Victim");
+            if (victim is VPlayer)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     static bool PrefixConsumeStamina(long amount)
