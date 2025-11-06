@@ -1,6 +1,6 @@
 {
-    "name": "MIMESISModMenu",
-    "version_number": "0.2.0",
+    "name": "MIMESIS_Mod_Menu",
+    "version_number": "0.2.1",
     "website_url": "https://github.com/official-notfishvr/MIMESIS-Mod-Menu",
     "description": "a mod menu.",
     "dependencies": []

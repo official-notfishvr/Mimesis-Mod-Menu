@@ -3,12 +3,6 @@
         <TargetFramework>netstandard2.1</TargetFramework>
         <Nullable>enable</Nullable>
     </PropertyGroup>
-    <Target Name="EmbedDependency" AfterTargets="ResolveAssemblyReferences">
-        <ItemGroup>
-            <EmbeddedResource Include="@(ReferenceCopyLocalPaths)" Condition="'%(ReferenceCopyLocalPaths.Filename)' == 'shadcnui' and '%(ReferenceCopyLocalPaths.Extension)' == '.dll'" />
-            <ReferenceCopyLocalPaths Remove="@(ReferenceCopyLocalPaths)" Condition="'%(ReferenceCopyLocalPaths.Filename)' == 'shadcnui'" />
-        </ItemGroup>
-    </Target>
     <ItemGroup>
         <Reference Include="0Harmony">
             <HintPath>$(BepInExAssemblyPath)\0Harmony.dll</HintPath>

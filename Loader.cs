@@ -1,4 +1,4 @@
-using fishmods;
+using MIMESIS_Mod_Menu;
 using MelonLoader;
 using UnityEngine;
 
@@ -13,7 +13,6 @@ namespace MIMESIS_Mod_Menu
 
         public override void OnInitializeMelon()
         {
-            AssemblyLoader.Init();
         }
 
         public override void OnSceneWasLoaded(int buildIndex, string sceneName)

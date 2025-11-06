@@ -64,7 +64,7 @@ public class MainGUI : MonoBehaviour
 
         if (showDemoWindow)
         {
-            windowRect = GUI.Window(101, windowRect, (GUI.WindowFunction)DrawDemoWindow, "FishMods Menu");
+            windowRect = GUI.Window(101, windowRect, (GUI.WindowFunction)DrawDemoWindow, "MIMESIS_Mod_Menu Menu");
         }
 
         if (espEnabled)
