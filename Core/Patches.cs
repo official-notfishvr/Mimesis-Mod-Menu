@@ -1,5 +1,8 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Reflection;
+using Bifrost.Cooked;
 using HarmonyLib;
 using MelonLoader;
 using Mimesis_Mod_Menu.Core.Config;
@@ -8,6 +11,8 @@ using Mimic.Actors;
 using MimicAPI.GameAPI;
 using ReluProtocol;
 using ReluProtocol.Enum;
+using UnityEngine;
+using static Mimic.Actors.ProtoActor;
 
 namespace Mimesis_Mod_Menu.Core
 {
@@ -21,12 +26,21 @@ namespace Mimesis_Mod_Menu.Core
         public static bool infiniteCurrencyEnabled = false;
 
         private static ConfigManager? configManager;
+        private static string itemLogPath = "";
+        private static HashSet<int> loggedItems = new HashSet<int>();
 
         public static void ApplyPatches(ConfigManager? config)
         {
             try
             {
                 configManager = config;
+                itemLogPath = Path.Combine(Directory.GetCurrentDirectory(), "ItemMasterIDLog.txt");
+
+                if (!File.Exists(itemLogPath))
+                {
+                    File.WriteAllText(itemLogPath, "ItemID,ItemName\n");
+                }
+
                 LoadConfig();
                 HarmonyLib.Harmony harmony = new HarmonyLib.Harmony("com.Mimesis.modmenu");
                 harmony.PatchAll(typeof(Patches).Assembly);
@@ -41,11 +55,11 @@ namespace Mimesis_Mod_Menu.Core
 
         private static void LoadConfig()
         {
-            if (configManager == null)
-                return;
-
             try
             {
+                if (configManager == null)
+                    return;
+
                 durabilityPatchEnabled = configManager.GetBool("durabilityPatchEnabled", false);
                 pricePatchEnabled = configManager.GetBool("pricePatchEnabled", false);
                 gaugePatchEnabled = configManager.GetBool("gaugePatchEnabled", false);
@@ -61,11 +75,11 @@ namespace Mimesis_Mod_Menu.Core
 
         public static void SaveConfig()
         {
-            if (configManager == null)
-                return;
-
             try
             {
+                if (configManager == null)
+                    return;
+
                 configManager.SetBool("durabilityPatchEnabled", durabilityPatchEnabled);
                 configManager.SetBool("pricePatchEnabled", pricePatchEnabled);
                 configManager.SetBool("gaugePatchEnabled", gaugePatchEnabled);
@@ -80,43 +94,141 @@ namespace Mimesis_Mod_Menu.Core
             }
         }
 
-        public static void SaveConfigAll() => SaveConfig();
+        public static void LogItemMasterID(int itemMasterID, ItemMasterInfo masterInfo)
+        {
+            try
+            {
+                if (loggedItems.Contains(itemMasterID))
+                    return;
+
+                if (masterInfo == null)
+                    return;
+
+                loggedItems.Add(itemMasterID);
+                string itemName = masterInfo.Name;
+                string line = $"{itemMasterID},{itemName}";
+                File.AppendAllText(itemLogPath, line + Environment.NewLine);
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"Error logging item: {ex.Message}");
+            }
+        }
 
         private static readonly BindingFlags AllFieldFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.IgnoreCase;
         private static readonly string[] NumericFieldPatterns = new[] { "<{0}>k__BackingField", "{0}", "_{0}", "m_{0}" };
 
         public static void SetIntField(object instance, string fieldName, int value)
         {
-            if (instance == null || string.IsNullOrEmpty(fieldName))
-                return;
-
-            Type type = instance.GetType();
-
-            foreach (string pattern in NumericFieldPatterns)
+            try
             {
-                string actualFieldName = string.Format(pattern, fieldName);
-                FieldInfo field = type.GetField(actualFieldName, AllFieldFlags);
+                if (instance == null || string.IsNullOrEmpty(fieldName))
+                    return;
 
-                if (field != null && IsNumericType(field.FieldType))
+                Type type = instance.GetType();
+
+                foreach (string pattern in NumericFieldPatterns)
                 {
-                    try
+                    string actualFieldName = string.Format(pattern, fieldName);
+                    FieldInfo field = type.GetField(actualFieldName, AllFieldFlags);
+
+                    if (field != null && IsNumericType(field.FieldType))
                     {
-                        field.SetValue(instance, Convert.ChangeType(value, field.FieldType));
-                        return;
-                    }
-                    catch (Exception ex)
-                    {
-                        MelonLogger.Warning($"Failed to set field {fieldName}: {ex.Message}");
+                        try
+                        {
+                            field.SetValue(instance, Convert.ChangeType(value, field.FieldType));
+                            return;
+                        }
+                        catch (Exception ex)
+                        {
+                            MelonLogger.Warning($"Failed to set field {fieldName}: {ex.Message}");
+                        }
                     }
                 }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"Error in SetIntField: {ex.Message}");
             }
         }
 
         private static bool IsNumericType(Type type)
         {
-            return type == typeof(int) || type == typeof(long) || type == typeof(short) || type == typeof(byte);
+            try
+            {
+                return type == typeof(int) || type == typeof(long) || type == typeof(short) || type == typeof(byte);
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"Error in IsNumericType: {ex.Message}");
+                return false;
+            }
         }
     }
+
+    #region Item Spawner Patches
+
+    public static class ItemSpawnerPatches
+    {
+        public static int pendingItemMasterID = 0;
+        public static int pendingItemQuantity = 0;
+
+        public static void SetItemToSpawn(int itemMasterID, int quantity)
+        {
+            pendingItemMasterID = itemMasterID;
+            pendingItemQuantity = quantity;
+        }
+    }
+
+    [HarmonyPatch]
+    internal static class InventoryControllerHandleChangeActiveInvenSlotPatch
+    {
+        private static MethodBase TargetMethod()
+        {
+            return AccessTools.Method(typeof(InventoryController), nameof(InventoryController.HandleChangeActiveInvenSlot), new Type[] { typeof(int), typeof(bool), typeof(int) });
+        }
+
+        private static void Prefix(InventoryController __instance, int slotIndex)
+        {
+            try
+            {
+                if (ItemSpawnerPatches.pendingItemMasterID == 0)
+                    return;
+
+                int itemMasterID = ItemSpawnerPatches.pendingItemMasterID;
+                int quantity = ItemSpawnerPatches.pendingItemQuantity;
+
+                ItemMasterInfo masterInfo = Inventory.GetItemMasterInfo(itemMasterID);
+                if (masterInfo == null)
+                {
+                    ItemSpawnerPatches.pendingItemMasterID = 0;
+                    return;
+                }
+
+                VCreature self = ReflectionHelper.GetFieldValue(__instance, "_self") as VCreature;
+                if (self == null || self.VRoom == null)
+                    return;
+
+                ItemElement newItemElement = self.VRoom.GetNewItemElement(itemMasterID, false, quantity, 0, 0, 0);
+                if (newItemElement == null)
+                {
+                    ItemSpawnerPatches.pendingItemMasterID = 0;
+                    return;
+                }
+
+                __instance.AddInvenItem(slotIndex, newItemElement, false);
+
+                ItemSpawnerPatches.pendingItemMasterID = 0;
+                ItemSpawnerPatches.pendingItemQuantity = 0;
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"InventoryControllerHandleChangeActiveInvenSlotPatch error: {ex.Message}");
+            }
+        }
+    }
+
+    #endregion
 
     #region Item Patches
 
@@ -148,6 +260,15 @@ namespace Mimesis_Mod_Menu.Core
         {
             try
             {
+                if (__instance.ItemMasterID > 0)
+                {
+                    ItemMasterInfo masterInfo = Inventory.GetItemMasterInfo(__instance.ItemMasterID);
+                    if (masterInfo != null)
+                    {
+                        Patches.LogItemMasterID(__instance.ItemMasterID, masterInfo);
+                    }
+                }
+
                 if (Patches.durabilityPatchEnabled)
                     Patches.SetIntField(__instance, "Durability", int.MaxValue);
                 if (Patches.pricePatchEnabled)
@@ -169,6 +290,15 @@ namespace Mimesis_Mod_Menu.Core
         {
             try
             {
+                if (__instance.ItemMasterID > 0)
+                {
+                    ItemMasterInfo masterInfo = Inventory.GetItemMasterInfo(__instance.ItemMasterID);
+                    if (masterInfo != null)
+                    {
+                        Patches.LogItemMasterID(__instance.ItemMasterID, masterInfo);
+                    }
+                }
+
                 if (Patches.durabilityPatchEnabled)
                 {
                     __instance.SetDurability(int.MaxValue);
@@ -194,11 +324,11 @@ namespace Mimesis_Mod_Menu.Core
     {
         private static bool Prefix(object __instance, object args)
         {
-            if (!MainGUI.godModeEnabled)
-                return true;
-
             try
             {
+                if (!MainGUI.godModeEnabled)
+                    return true;
+
                 object victim = ReflectionHelper.GetFieldValue(args, "Victim");
                 if (victim is VPlayer vplayer)
                 {
@@ -206,13 +336,14 @@ namespace Mimesis_Mod_Menu.Core
                     if (localPlayer != null && localPlayer.ActorID == vplayer.ObjectID)
                         return false;
                 }
+
+                return true;
             }
             catch (Exception ex)
             {
                 MelonLogger.Warning($"StatManagerOnDamagedPatch error: {ex.Message}");
+                return true;
             }
-
-            return true;
         }
     }
 
@@ -221,7 +352,15 @@ namespace Mimesis_Mod_Menu.Core
     {
         private static bool Prefix()
         {
-            return !MainGUI.infiniteStaminaEnabled;
+            try
+            {
+                return !MainGUI.infiniteStaminaEnabled;
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"StatManagerConsumeStaminaPatch error: {ex.Message}");
+                return true;
+            }
         }
     }
 
@@ -230,11 +369,19 @@ namespace Mimesis_Mod_Menu.Core
     {
         private static bool Prefix(ref float __result)
         {
-            if (!MainGUI.noFallDamageEnabled)
-                return true;
+            try
+            {
+                if (!MainGUI.noFallDamageEnabled)
+                    return true;
 
-            __result = 0f;
-            return false;
+                __result = 0f;
+                return false;
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"MovementControllerCheckFallDamagePatch error: {ex.Message}");
+                return true;
+            }
         }
     }
 
@@ -243,8 +390,15 @@ namespace Mimesis_Mod_Menu.Core
     {
         private static void Postfix(ref float __result)
         {
-            if (MainGUI.speedBoostEnabled)
-                __result *= MainGUI.speedBoostMultiplier;
+            try
+            {
+                if (MainGUI.speedBoostEnabled)
+                    __result *= MainGUI.speedBoostMultiplier;
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"ProtoActorCaculateSpeedPatch error: {ex.Message}");
+            }
         }
     }
 
@@ -257,11 +411,11 @@ namespace Mimesis_Mod_Menu.Core
     {
         private static bool Prefix(VPlayer __instance, int itemMasterID, int hashCode, int machineIndex, ref MsgErrorCode __result)
         {
-            if (!Patches.forceBuyEnabled)
-                return true;
-
             try
             {
+                if (!Patches.forceBuyEnabled)
+                    return true;
+
                 MaintenanceRoom maintenanceRoom = __instance.VRoom as MaintenanceRoom;
                 if (maintenanceRoom == null)
                 {
@@ -297,11 +451,11 @@ namespace Mimesis_Mod_Menu.Core
     {
         private static bool Prefix(VPlayer __instance, int hashCode, ref MsgErrorCode __result)
         {
-            if (!Patches.forceRepairEnabled)
-                return true;
-
             try
             {
+                if (!Patches.forceRepairEnabled)
+                    return true;
+
                 MaintenanceRoom maintenanceRoom = __instance.VRoom as MaintenanceRoom;
                 if (maintenanceRoom == null)
                 {
@@ -329,17 +483,32 @@ namespace Mimesis_Mod_Menu.Core
     {
         private static MethodBase TargetMethod()
         {
-            return AccessTools.Method(typeof(MaintenanceRoom), "BuyItem", new Type[] { typeof(int), typeof(VCreature) });
+            try
+            {
+                return AccessTools.Method(typeof(MaintenanceRoom), "BuyItem", new Type[] { typeof(int), typeof(VCreature) });
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"MaintenanceRoomBuyItemCurrencyPatch TargetMethod error: {ex.Message}");
+                return null;
+            }
         }
 
         private static void Postfix(MaintenanceRoom __instance, int itemMasterID, VCreature creature, ref MsgErrorCode __result)
         {
-            if (!Patches.infiniteCurrencyEnabled)
-                return;
-
-            if (__result == MsgErrorCode.Success)
+            try
             {
-                ReflectionHelper.InvokeMethod(__instance, "AddCurrency", int.MaxValue);
+                if (!Patches.infiniteCurrencyEnabled)
+                    return;
+
+                if (__result == MsgErrorCode.Success)
+                {
+                    ReflectionHelper.InvokeMethod(__instance, "AddCurrency", int.MaxValue);
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"MaintenanceRoomBuyItemCurrencyPatch error: {ex.Message}");
             }
         }
     }
@@ -353,15 +522,30 @@ namespace Mimesis_Mod_Menu.Core
     {
         private static MethodBase TargetMethod()
         {
-            return AccessTools.Method(typeof(GameMainBase), "UpdateCurrency", new Type[] { typeof(int) });
+            try
+            {
+                return AccessTools.Method(typeof(GameMainBase), "UpdateCurrency", new Type[] { typeof(int) });
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"GameMainBaseUpdateCurrencyPatch TargetMethod error: {ex.Message}");
+                return null;
+            }
         }
 
         private static void Prefix(GameMainBase __instance, ref int currentCurrency)
         {
-            if (!Patches.infiniteCurrencyEnabled)
-                return;
+            try
+            {
+                if (!Patches.infiniteCurrencyEnabled)
+                    return;
 
-            currentCurrency = int.MaxValue;
+                currentCurrency = int.MaxValue;
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"GameMainBaseUpdateCurrencyPatch error: {ex.Message}");
+            }
         }
     }
 
@@ -370,15 +554,30 @@ namespace Mimesis_Mod_Menu.Core
     {
         private static MethodBase TargetMethod()
         {
-            return AccessTools.Method(typeof(GameMainBase), "OnCurrencyChanged", new Type[] { typeof(int), typeof(int) });
+            try
+            {
+                return AccessTools.Method(typeof(GameMainBase), "OnCurrencyChanged", new Type[] { typeof(int), typeof(int) });
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"GameMainBaseOnCurrencyChangedPatch TargetMethod error: {ex.Message}");
+                return null;
+            }
         }
 
         private static void Prefix(GameMainBase __instance, ref int prev, ref int curr)
         {
-            if (!Patches.infiniteCurrencyEnabled)
-                return;
+            try
+            {
+                if (!Patches.infiniteCurrencyEnabled)
+                    return;
 
-            curr = int.MaxValue;
+                curr = int.MaxValue;
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"GameMainBaseOnCurrencyChangedPatch error: {ex.Message}");
+            }
         }
     }
 
@@ -387,15 +586,30 @@ namespace Mimesis_Mod_Menu.Core
     {
         private static MethodBase TargetMethod()
         {
-            return AccessTools.Method(typeof(MaintenanceScene), "OnCurrencyChanged", new Type[] { typeof(int), typeof(int) });
+            try
+            {
+                return AccessTools.Method(typeof(MaintenanceScene), "OnCurrencyChanged", new Type[] { typeof(int), typeof(int) });
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"MaintenanceSceneOnCurrencyChangedPatch TargetMethod error: {ex.Message}");
+                return null;
+            }
         }
 
         private static void Prefix(MaintenanceScene __instance, ref int prev, ref int curr)
         {
-            if (!Patches.infiniteCurrencyEnabled)
-                return;
+            try
+            {
+                if (!Patches.infiniteCurrencyEnabled)
+                    return;
 
-            curr = int.MaxValue;
+                curr = int.MaxValue;
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"MaintenanceSceneOnCurrencyChangedPatch error: {ex.Message}");
+            }
         }
     }
 

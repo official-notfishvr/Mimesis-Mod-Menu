@@ -1,10 +1,10 @@
 {
     "name": "MIMESIS_Mod_Menu",
-    "version_number": "2.1.0",
+    "version_number": "2.2.0",
     "website_url": "https://github.com/official-notfishvr/Mimesis-Mod-Menu",
     "description": "a mod menu.",
     "dependencies": [
         "LavaGang-MelonLoader-0.7.1",
-        "NeoMimicry-MimicAPI-0.1.0"
+        "NeoMimicry-MimicAPI-0.1.1"
     ]
 }

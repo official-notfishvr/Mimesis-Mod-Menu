@@ -4,6 +4,7 @@
         <Nullable>enable</Nullable>
         <WarningLevel>4</WarningLevel>
         <NoWarn>$(NoWarn);MSB3277;MSB3270</NoWarn>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     </PropertyGroup>
     <ItemGroup>
         <Reference Include="0Harmony">

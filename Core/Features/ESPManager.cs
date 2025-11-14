@@ -45,11 +45,11 @@ namespace Mimesis_Mod_Menu.Core.Features
 
         public static void Initialize()
         {
-            if (isInitialized)
-                return;
-
             try
             {
+                if (isInitialized)
+                    return;
+
                 cachedLineTexture = new Texture2D(1, 1);
                 if (cachedLineTexture != null)
                     cachedLineTexture.filterMode = FilterMode.Point;
@@ -64,23 +64,30 @@ namespace Mimesis_Mod_Menu.Core.Features
 
         public static void UpdateESP()
         {
-            if (!MainGUI.espEnabled || !isInitialized)
-                return;
-
-            mainCamera = Camera.main;
-            if (mainCamera == null)
-                return;
-
-            float currentTime = Time.realtimeSinceStartup;
-            if (currentTime - lastUpdateTime >= CACHE_UPDATE_INTERVAL)
+            try
             {
-                UpdateActorCache();
-                UpdateLootCache();
-                lastUpdateTime = currentTime;
-            }
+                if (!MainGUI.espEnabled || !isInitialized)
+                    return;
 
-            DrawActorESP();
-            DrawLootESP();
+                mainCamera = Camera.main;
+                if (mainCamera == null)
+                    return;
+
+                float currentTime = Time.realtimeSinceStartup;
+                if (currentTime - lastUpdateTime >= CACHE_UPDATE_INTERVAL)
+                {
+                    UpdateActorCache();
+                    UpdateLootCache();
+                    lastUpdateTime = currentTime;
+                }
+
+                DrawActorESP();
+                DrawLootESP();
+            }
+            catch (Exception ex)
+            {
+                MelonLoader.MelonLogger.Error($"ESPManager.UpdateESP error: {ex.Message}");
+            }
         }
 
         private static void UpdateActorCache()
@@ -147,106 +154,150 @@ namespace Mimesis_Mod_Menu.Core.Features
 
         private static void DrawActorESP()
         {
-            foreach (ProtoActor actor in cachedActors)
+            try
             {
-                if (actor == null || !actor.gameObject.activeInHierarchy)
-                    continue;
+                foreach (ProtoActor actor in cachedActors)
+                {
+                    if (actor == null || !actor.gameObject.activeInHierarchy)
+                        continue;
 
-                if (!ShouldDisplayActorType(actor.ActorType))
-                    continue;
+                    if (!ShouldDisplayActorType(actor.ActorType))
+                        continue;
 
-                Vector3 screenPos = mainCamera.WorldToScreenPoint(actor.transform.position);
-                if (screenPos.z <= 0)
-                    continue;
+                    Vector3 screenPos = mainCamera.WorldToScreenPoint(actor.transform.position);
+                    if (screenPos.z <= 0)
+                        continue;
 
-                screenPos.y = Screen.height - screenPos.y;
+                    screenPos.y = Screen.height - screenPos.y;
 
-                float distance = Vector3.Distance(mainCamera.transform.position, actor.transform.position);
-                string label = ActorTypeLabels.ContainsKey(actor.ActorType) ? ActorTypeLabels[actor.ActorType] : "[UNKNOWN]";
-                Color color = ActorTypeColors.ContainsKey(actor.ActorType) ? ActorTypeColors[actor.ActorType] : Color.white;
-                string text = $"{label}\n{actor.nickName}\n[{distance:F0}m]";
+                    float distance = Vector3.Distance(mainCamera.transform.position, actor.transform.position);
+                    string label = ActorTypeLabels.ContainsKey(actor.ActorType) ? ActorTypeLabels[actor.ActorType] : "[UNKNOWN]";
+                    Color color = ActorTypeColors.ContainsKey(actor.ActorType) ? ActorTypeColors[actor.ActorType] : Color.white;
+                    string text = $"{label}\n{actor.nickName}\n[{distance:F0}m]";
 
-                DrawESPText(screenPos, text, color);
+                    DrawESPText(screenPos, text, color);
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLoader.MelonLogger.Error($"ESPManager.DrawActorESP error: {ex.Message}");
             }
         }
 
         private static void DrawLootESP()
         {
-            foreach (LootingLevelObject loot in cachedLootObjects)
+            try
             {
-                if (loot == null || !loot.gameObject.activeInHierarchy)
-                    continue;
+                foreach (LootingLevelObject loot in cachedLootObjects)
+                {
+                    if (loot == null || !loot.gameObject.activeInHierarchy)
+                        continue;
 
-                Vector3 screenPos = mainCamera.WorldToScreenPoint(loot.transform.position);
-                if (screenPos.z <= 0)
-                    continue;
+                    Vector3 screenPos = mainCamera.WorldToScreenPoint(loot.transform.position);
+                    if (screenPos.z <= 0)
+                        continue;
 
-                screenPos.y = Screen.height - screenPos.y;
+                    screenPos.y = Screen.height - screenPos.y;
 
-                float distance = Vector3.Distance(mainCamera.transform.position, loot.transform.position);
-                string itemName = CleanObjectName(loot.gameObject.name);
-                string text = $"{itemName}\n[{distance:F0}m]";
+                    float distance = Vector3.Distance(mainCamera.transform.position, loot.transform.position);
+                    string itemName = CleanObjectName(loot.gameObject.name);
+                    string text = $"{itemName}\n[{distance:F0}m]";
 
-                DrawESPText(screenPos, text, Color.white);
+                    DrawESPText(screenPos, text, Color.white);
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLoader.MelonLogger.Error($"ESPManager.DrawLootESP error: {ex.Message}");
             }
         }
 
         private static bool ShouldDisplayActorType(ActorType type)
         {
-            return type switch
+            try
             {
-                ActorType.Player => MainGUI.espShowPlayers,
-                ActorType.Monster => MainGUI.espShowMonsters,
-                ActorType.Interactor => MainGUI.espShowInteractors,
-                ActorType.NPC => MainGUI.espShowNPCs,
-                ActorType.FieldSkill => MainGUI.espShowFieldSkills,
-                ActorType.Projectile => MainGUI.espShowProjectiles,
-                ActorType.AuraSkill => MainGUI.espShowAuraSkills,
-                _ => false,
-            };
+                return type switch
+                {
+                    ActorType.Player => MainGUI.espShowPlayers,
+                    ActorType.Monster => MainGUI.espShowMonsters,
+                    ActorType.Interactor => MainGUI.espShowInteractors,
+                    ActorType.NPC => MainGUI.espShowNPCs,
+                    ActorType.FieldSkill => MainGUI.espShowFieldSkills,
+                    ActorType.Projectile => MainGUI.espShowProjectiles,
+                    ActorType.AuraSkill => MainGUI.espShowAuraSkills,
+                    _ => false,
+                };
+            }
+            catch (Exception ex)
+            {
+                MelonLoader.MelonLogger.Error($"ESPManager.ShouldDisplayActorType error: {ex.Message}");
+                return false;
+            }
         }
 
         private static void DrawESPText(Vector3 screenPos, string text, Color textColor)
         {
-            GUIStyle style = new GUIStyle(GUI.skin.label)
+            try
             {
-                fontSize = (int)ESP_TEXT_SIZE,
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                wordWrap = false,
-                normal = { textColor = textColor },
-            };
+                GUIStyle style = new GUIStyle(GUI.skin.label)
+                {
+                    fontSize = (int)ESP_TEXT_SIZE,
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.MiddleCenter,
+                    wordWrap = false,
+                    normal = { textColor = textColor },
+                };
 
-            Vector2 textSize = style.CalcSize(new GUIContent(text));
-            Rect textRect = new Rect(screenPos.x - textSize.x / 2 - 5, screenPos.y - textSize.y / 2 - 3, textSize.x + 10, textSize.y + 6);
+                Vector2 textSize = style.CalcSize(new GUIContent(text));
+                Rect textRect = new Rect(screenPos.x - textSize.x / 2 - 5, screenPos.y - textSize.y / 2 - 3, textSize.x + 10, textSize.y + 6);
 
-            GUI.Label(textRect, text, style);
+                GUI.Label(textRect, text, style);
+            }
+            catch (Exception ex)
+            {
+                MelonLoader.MelonLogger.Error($"ESPManager.DrawESPText error: {ex.Message}");
+            }
         }
 
         private static string CleanObjectName(string name)
         {
-            if (string.IsNullOrEmpty(name))
+            try
+            {
+                if (string.IsNullOrEmpty(name))
+                    return "Item";
+
+                name = System.Text.RegularExpressions.Regex.Replace(name, @"\(Clone\)", "");
+                name = System.Text.RegularExpressions.Regex.Replace(name, @"[Pp]refab", "");
+                name = name.Replace("_", " ").Trim();
+
+                return string.IsNullOrEmpty(name) ? "Item" : name;
+            }
+            catch (Exception ex)
+            {
+                MelonLoader.MelonLogger.Error($"ESPManager.CleanObjectName error: {ex.Message}");
                 return "Item";
-
-            name = System.Text.RegularExpressions.Regex.Replace(name, @"\(Clone\)", "");
-            name = System.Text.RegularExpressions.Regex.Replace(name, @"[Pp]refab", "");
-            name = name.Replace("_", " ").Trim();
-
-            return string.IsNullOrEmpty(name) ? "Item" : name;
+            }
         }
 
         public static void Cleanup()
         {
-            cachedLootObjects.Clear();
-            cachedActors.Clear();
-
-            if (cachedLineTexture != null)
+            try
             {
-                UnityEngine.Object.Destroy(cachedLineTexture);
-                cachedLineTexture = null;
-            }
+                cachedLootObjects.Clear();
+                cachedActors.Clear();
 
-            isInitialized = false;
+                if (cachedLineTexture != null)
+                {
+                    UnityEngine.Object.Destroy(cachedLineTexture);
+                    cachedLineTexture = null;
+                }
+
+                isInitialized = false;
+            }
+            catch (Exception ex)
+            {
+                MelonLoader.MelonLogger.Error($"ESPManager.Cleanup error: {ex.Message}");
+            }
         }
     }
 }
