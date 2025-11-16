@@ -1,0 +1,135 @@
+name: Build and Release on Tag
+
+on:
+  push:
+    tags:
+      - "*.*"
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version-check.outputs.version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout Workspace repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/Mimesis-Workspace
+          path: Workspace
+          ssh-key: ${{ secrets.WORKSPACE_TOKEN }}
+
+      - name: Checkout MimicAPI repository
+        uses: actions/checkout@v4
+        with:
+          repository: NeoMimicry/MimicAPI
+          path: Workspace/MimicAPI
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Verify version in Loader.cs matches the tag
+        id: version-check
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          CS_VERSION=$(grep -oP '\[assembly: MelonInfo\(typeof\(Loader\), "MimesisModMenu", "\K[^"]+' Core/Loader.cs)
+          echo "Tag version: $TAG_VERSION"
+          echo "Loader.cs version: $CS_VERSION"
+          if [ "$TAG_VERSION" != "$CS_VERSION" ]; then
+            echo "Version mismatch: Tag version is $TAG_VERSION, but Loader.cs version is $CS_VERSION"
+            exit 1
+          fi
+          echo "version=$TAG_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Build the project
+        run: >
+          dotnet build "MimesisModMenu.csproj" --configuration Release
+          /p:WorkspaceLibPath="${{ github.workspace }}/Workspace/lib"
+          /p:GameManagedPath="${{ github.workspace }}/Workspace/lib/game"
+          /p:GameAssemblyPath="${{ github.workspace }}/Workspace/lib/game"
+          /p:MelonLoaderPath="${{ github.workspace }}/Workspace/lib/melonloader"
+          /p:MimicAPIPath="${{ github.workspace }}/Workspace/MimicAPI"
+
+      - name: Prepare release directory
+        run: |
+          mkdir -p release
+          cp bin/Release/netstandard2.1/MimesisModMenu.dll release/
+          if [ -d "thunderstore" ]; then
+            cp -r thunderstore/* release/ 2>/dev/null || true
+            # Update version in manifest.json if it exists
+            if [ -f "release/manifest.json" ]; then
+              sed -i "s/\"version_number\": \".*\"/\"version_number\": \"${{ steps.version-check.outputs.version }}\"/" release/manifest.json
+            fi
+          fi
+
+      - name: Create release ZIP
+        run: zip -j "MimesisModMenu_${{ steps.version-check.outputs.version }}.zip" release/*
+
+      - name: Upload Release ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: MimesisModMenu
+          path: "MimesisModMenu_${{ steps.version-check.outputs.version }}.zip"
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download built ZIP
+        uses: actions/download-artifact@v4
+        with:
+          name: MimesisModMenu
+
+      - name: Extract DLL from ZIP
+        run: |
+          mkdir -p release
+          unzip -q "MimesisModMenu_${{ needs.build.outputs.version }}.zip" -d release/
+          ls -la release/
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release/MimesisModMenu.dll
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  thunderstore:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download built ZIP
+        uses: actions/download-artifact@v4
+        with:
+          name: MimesisModMenu
+
+      - name: Extract ZIP for Thunderstore
+        run: |
+          mkdir -p thunderstore-package
+          unzip -q "MimesisModMenu_${{ needs.build.outputs.version }}.zip" -d thunderstore-package/
+
+      - name: Upload to Thunderstore
+        uses: GreenTF/upload-thunderstore-package@v4.3
+        with:
+          token: ${{ secrets.THUNDERSTORE_TOKEN }}
+          community: mimesis
+          namespace: FishModsVRVR
+          name: MimesisModMenu
+          description: a mod menu
+          version: ${{ needs.build.outputs.version }}
+          repo: mimesis.thunderstore.io
+          path: thunderstore-package
+          categories: |
+            Mods
