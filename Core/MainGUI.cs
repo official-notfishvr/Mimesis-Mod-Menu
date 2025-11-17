@@ -68,6 +68,12 @@ namespace Mimesis_Mod_Menu.Core
             public bool AutoLoot = false;
             public float AutoLootDistance = 50f;
             public bool Fullbright = false;
+            public bool InfiniteDurability = false;
+            public bool InfinitePrice = false;
+            public bool InfiniteGauge = false;
+            public bool ForceBuy = false;
+            public bool ForceRepair = false;
+            public bool InfiniteCurrency = false;
         }
 
         private FeatureState state = new FeatureState();
@@ -78,8 +84,6 @@ namespace Mimesis_Mod_Menu.Core
             {
                 guiHelper = new GUIHelper();
                 configManager = new ConfigManager();
-
-                LoadAllSettings();
 
                 demoTabs = new Tabs.TabConfig[]
                 {
@@ -100,6 +104,17 @@ namespace Mimesis_Mod_Menu.Core
                 ESPManager.Initialize();
                 Patches.ApplyPatches(configManager);
 
+                var toggleMenuHotkey = configManager.GetHotkey("ToggleMenu");
+                if (toggleMenuHotkey.Key == KeyCode.None)
+                {
+                    configManager.SetHotkey("ToggleMenu", new HotkeyConfig(KeyCode.Insert, false, false, false));
+                    MelonLogger.Msg("Set ToggleMenu hotkey to Insert");
+                }
+
+                bool enabled = configManager.GetValue<bool>("Enabled", true, "Enable or disable the mod menu");
+                if (!enabled)
+                    showDemoWindow = false;
+
                 MelonLogger.Msg("Mimesis Mod Menu initialized successfully");
             }
             catch (Exception ex)
@@ -108,36 +123,14 @@ namespace Mimesis_Mod_Menu.Core
             }
         }
 
-        private void LoadAllSettings()
-        {
-            state.GodMode = configManager.GetBool("godMode", false);
-            state.InfiniteStamina = configManager.GetBool("infiniteStamina", false);
-            state.NoFallDamage = configManager.GetBool("noFallDamage", false);
-            state.SpeedBoost = configManager.GetBool("speedBoost", false);
-            state.SpeedMultiplier = configManager.GetFloat("speedMultiplier", 2f);
-            state.ESP = configManager.GetBool("espEnabled", false);
-            state.ESPShowLoot = configManager.GetBool("espShowLoot", false);
-            state.ESPShowPlayers = configManager.GetBool("espShowPlayers", true);
-            state.ESPShowMonsters = configManager.GetBool("espShowMonsters", true);
-            state.ESPShowInteractors = configManager.GetBool("espShowInteractors", false);
-            state.ESPShowNPCs = configManager.GetBool("espShowNPCs", false);
-            state.ESPShowFieldSkills = configManager.GetBool("espShowFieldSkills", false);
-            state.ESPShowProjectiles = configManager.GetBool("espShowProjectiles", false);
-            state.ESPShowAuraSkills = configManager.GetBool("espShowAuraSkills", false);
-            state.ESPDistance = configManager.GetFloat("espDistance", 150f);
-            state.AutoLoot = configManager.GetBool("autoLoot", false);
-            state.AutoLootDistance = configManager.GetFloat("autoLootDistance", 50f);
-            state.Fullbright = configManager.GetBool("fullbright", false);
-        }
-
         private void SaveSetting(string key, object value)
         {
             if (value is bool b)
-                configManager.SetBool(key, b);
+                configManager.SetValue<bool>(key, b);
             else if (value is float f)
-                configManager.SetFloat(key, f);
+                configManager.SetValue<float>(key, f);
             else if (value is string s)
-                configManager.SetString(key, s);
+                configManager.SetValue<string>(key, s);
         }
 
         void Update()
@@ -145,6 +138,17 @@ namespace Mimesis_Mod_Menu.Core
             try
             {
                 if (configManager == null)
+                {
+                    autoLootManager?.Update();
+                    fullbrightManager?.Update();
+                    pickupManager?.Update();
+                    movementManager?.Update();
+                    itemSpawnerManager?.Update();
+                    return;
+                }
+
+                bool menuEnabled = configManager.GetValue<bool>("Enabled", true);
+                if (!menuEnabled)
                 {
                     autoLootManager?.Update();
                     fullbrightManager?.Update();
@@ -188,14 +192,12 @@ namespace Mimesis_Mod_Menu.Core
                 {
                     state.AutoLoot = !state.AutoLoot;
                     autoLootManager?.SetEnabled(state.AutoLoot);
-                    SaveSetting("autoLoot", state.AutoLoot);
                 }
 
                 if (configManager.GetHotkey("ToggleFullbright").IsPressed())
                 {
                     state.Fullbright = !state.Fullbright;
                     fullbrightManager?.SetEnabled(state.Fullbright);
-                    SaveSetting("fullbright", state.Fullbright);
                 }
 
                 autoLootManager?.Update();
@@ -214,7 +216,6 @@ namespace Mimesis_Mod_Menu.Core
         {
             bool newVal = !getter();
             setter(newVal);
-            SaveSetting(key, newVal);
         }
 
         private void DetectHotkeyInput()
@@ -264,6 +265,10 @@ namespace Mimesis_Mod_Menu.Core
         {
             try
             {
+                bool menuEnabled = configManager?.GetValue<bool>("Enabled", true) ?? true;
+                if (!menuEnabled)
+                    return;
+
                 GUI.color = Color.white;
                 if (GUI.Button(new Rect(10, 10, 150, 30), showDemoWindow ? "Hide Menu" : "Show Menu"))
                     showDemoWindow = !showDemoWindow;
@@ -349,11 +354,11 @@ namespace Mimesis_Mod_Menu.Core
                 guiHelper?.CardTitle("Defense");
                 guiHelper?.CardContent(() =>
                 {
-                    DrawBoolSwitch("God Mode", x => state.GodMode = x, () => state.GodMode, "godMode");
+                    DrawBoolSwitch("God Mode", x => state.GodMode = x, () => state.GodMode);
                     guiHelper?.AddSpace(8);
-                    DrawBoolSwitch("No Fall Damage", x => state.NoFallDamage = x, () => state.NoFallDamage, "noFallDamage");
+                    DrawBoolSwitch("No Fall Damage", x => state.NoFallDamage = x, () => state.NoFallDamage);
                     guiHelper?.AddSpace(8);
-                    DrawBoolSwitch("Infinite Stamina", x => state.InfiniteStamina = x, () => state.InfiniteStamina, "infiniteStamina");
+                    DrawBoolSwitch("Infinite Stamina", x => state.InfiniteStamina = x, () => state.InfiniteStamina);
                 });
                 guiHelper?.EndCard();
 
@@ -363,12 +368,12 @@ namespace Mimesis_Mod_Menu.Core
                 guiHelper?.CardTitle("Movement");
                 guiHelper?.CardContent(() =>
                 {
-                    DrawBoolSwitch("Speed Boost", x => state.SpeedBoost = x, () => state.SpeedBoost, "speedBoost");
+                    DrawBoolSwitch("Speed Boost", x => state.SpeedBoost = x, () => state.SpeedBoost);
 
                     if (state.SpeedBoost)
                     {
                         guiHelper?.AddSpace(8);
-                        DrawFloatSlider("Multiplier", x => state.SpeedMultiplier = x, () => state.SpeedMultiplier, 1f, 5f, "x", "speedMultiplier");
+                        DrawFloatSlider("Multiplier", x => state.SpeedMultiplier = x, () => state.SpeedMultiplier, 1f, 5f, "x");
                         guiHelper?.MutedLabel($"Current: {state.SpeedMultiplier:F2}x");
                     }
 
@@ -449,12 +454,12 @@ namespace Mimesis_Mod_Menu.Core
                 guiHelper?.CardTitle("Auto Loot");
                 guiHelper?.CardContent(() =>
                 {
-                    DrawBoolSwitch("Auto Loot Enabled", x => state.AutoLoot = x, () => state.AutoLoot, "autoLoot");
+                    DrawBoolSwitch("Auto Loot Enabled", x => state.AutoLoot = x, () => state.AutoLoot);
 
                     if (state.AutoLoot)
                     {
                         guiHelper?.AddSpace(8);
-                        DrawFloatSlider("Detection Range", x => state.AutoLootDistance = x, () => state.AutoLootDistance, 10f, 200f, "m", "autoLootDistance");
+                        DrawFloatSlider("Detection Range", x => state.AutoLootDistance = x, () => state.AutoLootDistance, 10f, 200f, "m");
                         autoLootManager?.SetDistance(state.AutoLootDistance);
                         guiHelper?.MutedLabel($"Current: {state.AutoLootDistance:F1}m");
                     }
@@ -464,68 +469,36 @@ namespace Mimesis_Mod_Menu.Core
                 guiHelper?.AddSpace(12);
 
                 guiHelper?.BeginCard(width: -1, height: -1);
-                guiHelper?.CardTitle("Shop Features");
+                guiHelper?.CardTitle("Equipment");
                 guiHelper?.CardContent(() =>
                 {
-                    DrawPatchToggle("Force Buy", () => configManager.GetBool("forceBuyEnabled", false), v => configManager.SetBool("forceBuyEnabled", v));
-                    guiHelper?.AddSpace(10);
-                    DrawPatchToggle("Force Repair", () => configManager.GetBool("forceRepairEnabled", false), v => configManager.SetBool("forceRepairEnabled", v));
-                    guiHelper?.AddSpace(10);
-                    DrawPatchToggle("Infinite Currency", () => configManager.GetBool("infiniteCurrencyEnabled", false), v => configManager.SetBool("infiniteCurrencyEnabled", v));
+                    DrawBoolSwitch("Infinite Durability", x => state.InfiniteDurability = x, () => state.InfiniteDurability);
+                    guiHelper?.AddSpace(8);
+                    DrawBoolSwitch("Infinite Gauge", x => state.InfiniteGauge = x, () => state.InfiniteGauge);
                 });
                 guiHelper?.EndCard();
 
                 guiHelper?.AddSpace(12);
 
                 guiHelper?.BeginCard(width: -1, height: -1);
-                guiHelper?.CardTitle("Item Properties");
-                guiHelper?.CardDescription("Restart required");
+                guiHelper?.CardTitle("Commerce");
                 guiHelper?.CardContent(() =>
                 {
-                    DrawPatchToggle("Infinite Durability", () => configManager.GetBool("durabilityPatchEnabled", false), v => configManager.SetBool("durabilityPatchEnabled", v), true);
-                    guiHelper?.AddSpace(10);
-                    DrawPatchToggle("Infinite Price", () => configManager.GetBool("pricePatchEnabled", false), v => configManager.SetBool("pricePatchEnabled", v), true);
-                    guiHelper?.AddSpace(10);
-                    DrawPatchToggle("Infinite Gauge", () => configManager.GetBool("gaugePatchEnabled", false), v => configManager.SetBool("gaugePatchEnabled", v), true);
+                    DrawBoolSwitch("Infinite Currency", x => state.InfiniteCurrency = x, () => state.InfiniteCurrency);
+                    guiHelper?.AddSpace(8);
+                    DrawBoolSwitch("Infinite Price", x => state.InfinitePrice = x, () => state.InfinitePrice);
                 });
                 guiHelper?.EndCard();
 
                 guiHelper?.AddSpace(12);
 
                 guiHelper?.BeginCard(width: -1, height: -1);
-                guiHelper?.CardTitle("Item Spawner");
+                guiHelper?.CardTitle("Shop Actions");
                 guiHelper?.CardContent(() =>
                 {
-                    guiHelper?.Label("Item Master ID:", LabelVariant.Default);
-                    itemSpawnIDInput = GUILayout.TextField(itemSpawnIDInput, GUILayout.Height(25));
-                    guiHelper?.AddSpace(6);
-
-                    guiHelper?.Label("Quantity:", LabelVariant.Default);
-                    itemSpawnQuantityInput = GUILayout.TextField(itemSpawnQuantityInput, GUILayout.Height(25));
+                    DrawBoolSwitch("Force Buy", x => state.ForceBuy = x, () => state.ForceBuy);
                     guiHelper?.AddSpace(8);
-
-                    if (guiHelper?.Button("Spawn Item", ButtonVariant.Default, ButtonSize.Default) ?? false)
-                    {
-                        if (int.TryParse(itemSpawnIDInput, out int itemID) && int.TryParse(itemSpawnQuantityInput, out int qty))
-                        {
-                            itemSpawnerManager?.AddItemToSpawn(itemID, qty);
-                            guiHelper?.MutedLabel("Item queued - change inventory slot to spawn!");
-                        }
-                    }
-
-                    guiHelper?.AddSpace(8);
-
-                    var pending = itemSpawnerManager?.GetPendingItems() ?? new Dictionary<int, int>();
-                    if (pending.Count > 0)
-                    {
-                        guiHelper?.MutedLabel("Pending items:");
-                        foreach (var kvp in pending)
-                            guiHelper?.MutedLabel($"  ID {kvp.Key} x{kvp.Value}");
-                    }
-                    else
-                    {
-                        guiHelper?.MutedLabel("No pending items");
-                    }
+                    DrawBoolSwitch("Force Repair", x => state.ForceRepair = x, () => state.ForceRepair);
                 });
                 guiHelper?.EndCard();
 
@@ -547,12 +520,12 @@ namespace Mimesis_Mod_Menu.Core
                 guiHelper?.CardTitle("ESP Settings");
                 guiHelper?.CardContent(() =>
                 {
-                    DrawBoolSwitch("Enable ESP", x => state.ESP = x, () => state.ESP, "espEnabled");
+                    DrawBoolSwitch("Enable ESP", x => state.ESP = x, () => state.ESP);
 
                     if (state.ESP)
                     {
                         guiHelper?.AddSpace(10);
-                        DrawFloatSlider("Distance", x => state.ESPDistance = x, () => state.ESPDistance, 50f, 500f, "m", "espDistance");
+                        DrawFloatSlider("Distance", x => state.ESPDistance = x, () => state.ESPDistance, 50f, 500f, "m");
                     }
                 });
                 guiHelper?.EndCard();
@@ -566,20 +539,20 @@ namespace Mimesis_Mod_Menu.Core
                     guiHelper?.BeginHorizontalGroup();
 
                     guiHelper?.BeginVerticalGroup(GUILayout.Width(150));
-                    DrawBoolSwitch("Players", x => state.ESPShowPlayers = x, () => state.ESPShowPlayers, "espShowPlayers");
-                    DrawBoolSwitch("Monsters", x => state.ESPShowMonsters = x, () => state.ESPShowMonsters, "espShowMonsters");
-                    DrawBoolSwitch("Loot", x => state.ESPShowLoot = x, () => state.ESPShowLoot, "espShowLoot");
+                    DrawBoolSwitch("Players", x => state.ESPShowPlayers = x, () => state.ESPShowPlayers);
+                    DrawBoolSwitch("Monsters", x => state.ESPShowMonsters = x, () => state.ESPShowMonsters);
+                    DrawBoolSwitch("Loot", x => state.ESPShowLoot = x, () => state.ESPShowLoot);
                     guiHelper?.EndVerticalGroup();
 
                     guiHelper?.BeginVerticalGroup(GUILayout.Width(150));
-                    DrawBoolSwitch("Interactors", x => state.ESPShowInteractors = x, () => state.ESPShowInteractors, "espShowInteractors");
-                    DrawBoolSwitch("NPCs", x => state.ESPShowNPCs = x, () => state.ESPShowNPCs, "espShowNPCs");
-                    DrawBoolSwitch("Field Skills", x => state.ESPShowFieldSkills = x, () => state.ESPShowFieldSkills, "espShowFieldSkills");
+                    DrawBoolSwitch("Interactors", x => state.ESPShowInteractors = x, () => state.ESPShowInteractors);
+                    DrawBoolSwitch("NPCs", x => state.ESPShowNPCs = x, () => state.ESPShowNPCs);
+                    DrawBoolSwitch("Field Skills", x => state.ESPShowFieldSkills = x, () => state.ESPShowFieldSkills);
                     guiHelper?.EndVerticalGroup();
 
                     guiHelper?.BeginVerticalGroup(GUILayout.Width(150));
-                    DrawBoolSwitch("Projectiles", x => state.ESPShowProjectiles = x, () => state.ESPShowProjectiles, "espShowProjectiles");
-                    DrawBoolSwitch("Aura Skills", x => state.ESPShowAuraSkills = x, () => state.ESPShowAuraSkills, "espShowAuraSkills");
+                    DrawBoolSwitch("Projectiles", x => state.ESPShowProjectiles = x, () => state.ESPShowProjectiles);
+                    DrawBoolSwitch("Aura Skills", x => state.ESPShowAuraSkills = x, () => state.ESPShowAuraSkills);
                     guiHelper?.EndVerticalGroup();
 
                     guiHelper?.EndHorizontalGroup();
@@ -592,7 +565,15 @@ namespace Mimesis_Mod_Menu.Core
                 guiHelper?.CardTitle("Lighting");
                 guiHelper?.CardContent(() =>
                 {
-                    DrawBoolSwitch("Fullbright", x => state.Fullbright = x, () => state.Fullbright, "fullbright");
+                    DrawBoolSwitch(
+                        "Fullbright",
+                        x =>
+                        {
+                            state.Fullbright = x;
+                            fullbrightManager?.SetEnabled(state.Fullbright);
+                        },
+                        () => state.Fullbright
+                    );
                 });
                 guiHelper?.EndCard();
 
@@ -749,7 +730,8 @@ namespace Mimesis_Mod_Menu.Core
                         }
                         else
                         {
-                            if (guiHelper?.Button(kvp.Value.ToString(), ButtonVariant.Secondary, ButtonSize.Small) ?? false)
+                            var currentHotkey = configManager?.GetHotkey(kvp.Key);
+                            if (guiHelper?.Button(currentHotkey?.ToString() ?? "None", ButtonVariant.Secondary, ButtonSize.Small) ?? false)
                             {
                                 editingHotkey = kvp.Key;
                                 isListeningForHotkey = true;
@@ -784,7 +766,6 @@ namespace Mimesis_Mod_Menu.Core
                     if (guiHelper?.Button("Reload Configuration", ButtonVariant.Default, ButtonSize.Default) ?? false)
                     {
                         configManager?.LoadAllConfigs();
-                        LoadAllSettings();
                         MelonLogger.Msg("Configuration reloaded");
                     }
                 });
@@ -798,18 +779,17 @@ namespace Mimesis_Mod_Menu.Core
             }
         }
 
-        private void DrawBoolSwitch(string label, Action<bool> setter, Func<bool> getter, string configKey)
+        private void DrawBoolSwitch(string label, Action<bool> setter, Func<bool> getter)
         {
             bool oldValue = getter();
             bool newValue = guiHelper?.Switch(label, oldValue) ?? false;
             if (newValue != oldValue)
             {
                 setter(newValue);
-                SaveSetting(configKey, newValue);
             }
         }
 
-        private void DrawFloatSlider(string label, Action<float> setter, Func<float> getter, float min, float max, string suffix, string configKey)
+        private void DrawFloatSlider(string label, Action<float> setter, Func<float> getter, float min, float max, string suffix)
         {
             float oldValue = getter();
             guiHelper?.BeginHorizontalGroup();
@@ -820,23 +800,6 @@ namespace Mimesis_Mod_Menu.Core
             if (newValue != oldValue)
             {
                 setter(newValue);
-                SaveSetting(configKey, newValue);
-            }
-        }
-
-        private void DrawPatchToggle(string label, Func<bool> getter, Action<bool> setter, bool requiresRestart = false)
-        {
-            bool oldValue = getter();
-            bool newValue = guiHelper?.Switch(label, oldValue) ?? false;
-
-            if (oldValue != newValue)
-            {
-                setter(newValue);
-                if (requiresRestart)
-                {
-                    guiHelper?.AddSpace(6);
-                    guiHelper?.DestructiveLabel("Restart game to apply");
-                }
             }
         }
 

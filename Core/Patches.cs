@@ -207,11 +207,11 @@ namespace Mimesis_Mod_Menu.Core
                 if (fs == null)
                     return;
 
-                if (fs.Fullbright)
+                if (fs.InfiniteDurability)
                     Patches.SetIntField(__instance, "durability", int.MaxValue);
-                if (fs.Fullbright)
+                if (fs.InfinitePrice)
                     Patches.SetIntField(__instance, "price", int.MaxValue);
-                if (fs.Fullbright)
+                if (fs.InfiniteGauge)
                     Patches.SetIntField(__instance, "remainGauge", int.MaxValue);
             }
             catch (Exception ex)
@@ -241,11 +241,11 @@ namespace Mimesis_Mod_Menu.Core
                 if (fs == null)
                     return;
 
-                if (fs.Fullbright)
+                if (fs.InfiniteDurability)
                     Patches.SetIntField(__instance, "Durability", int.MaxValue);
-                if (fs.Fullbright)
+                if (fs.InfinitePrice)
                     Patches.SetIntField(__instance, "Price", int.MaxValue);
-                if (fs.Fullbright)
+                if (fs.InfiniteGauge)
                     Patches.SetIntField(__instance, "RemainGauge", int.MaxValue);
             }
             catch (Exception ex)
@@ -275,11 +275,11 @@ namespace Mimesis_Mod_Menu.Core
                 if (fs == null)
                     return;
 
-                if (fs.Fullbright)
+                if (fs.InfiniteDurability)
                 {
                     __instance.SetDurability(int.MaxValue);
                 }
-                if (fs.Fullbright)
+                if (fs.InfiniteGauge)
                 {
                     __instance.SetAmount(int.MaxValue);
                 }
@@ -394,7 +394,7 @@ namespace Mimesis_Mod_Menu.Core
             try
             {
                 var fs = Patches.GetFeatureState();
-                if (fs == null || !fs.Fullbright)
+                if (fs == null || !fs.ForceBuy)
                     return true;
 
                 MaintenanceRoom maintenanceRoom = __instance.VRoom as MaintenanceRoom;
@@ -435,7 +435,7 @@ namespace Mimesis_Mod_Menu.Core
             try
             {
                 var fs = Patches.GetFeatureState();
-                if (fs == null || !fs.Fullbright)
+                if (fs == null || !fs.ForceRepair)
                     return true;
 
                 MaintenanceRoom maintenanceRoom = __instance.VRoom as MaintenanceRoom;
@@ -481,7 +481,7 @@ namespace Mimesis_Mod_Menu.Core
             try
             {
                 var fs = Patches.GetFeatureState();
-                if (fs == null || !fs.Fullbright)
+                if (fs == null || !fs.InfiniteCurrency)
                     return;
 
                 if (__result == MsgErrorCode.Success)
@@ -521,7 +521,7 @@ namespace Mimesis_Mod_Menu.Core
             try
             {
                 var fs = Patches.GetFeatureState();
-                if (fs == null || !fs.Fullbright)
+                if (fs == null || !fs.InfiniteCurrency)
                     return;
 
                 currentCurrency = int.MaxValue;
@@ -554,7 +554,7 @@ namespace Mimesis_Mod_Menu.Core
             try
             {
                 var fs = Patches.GetFeatureState();
-                if (fs == null || !fs.Fullbright)
+                if (fs == null || !fs.InfiniteCurrency)
                     return;
 
                 curr = int.MaxValue;
@@ -587,7 +587,7 @@ namespace Mimesis_Mod_Menu.Core
             try
             {
                 var fs = Patches.GetFeatureState();
-                if (fs == null || !fs.Fullbright)
+                if (fs == null || !fs.InfiniteCurrency)
                     return;
 
                 curr = int.MaxValue;

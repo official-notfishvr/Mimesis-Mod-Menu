@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using MelonLoader;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -9,8 +8,8 @@ namespace Mimesis_Mod_Menu.Core.Config
 {
     public class ConfigManager
     {
-        private const string MAIN_CATEGORY = "Mod Menu";
-        private const string HOTKEYS_CATEGORY = "Mod Menu Hotkeys";
+        private const string MAIN_CATEGORY = "Mimesis Mod Menu";
+        private const string HOTKEYS_CATEGORY = "Mimesis Mod Menu Hotkeys";
 
         private MelonPreferences_Category mainCategory;
         private MelonPreferences_Category hotkeysCategory;
@@ -22,64 +21,48 @@ namespace Mimesis_Mod_Menu.Core.Config
 
         public ConfigManager()
         {
-            mainCategory = MelonPreferences.CreateCategory(MAIN_CATEGORY, "Mod Menu Configuration");
-            hotkeysCategory = MelonPreferences.CreateCategory(HOTKEYS_CATEGORY, "Mod Menu Hotkey Configuration");
-            InitializeDefaultHotkeys();
+            mainCategory = MelonPreferences.CreateCategory(MAIN_CATEGORY, "Mimesis Mod Menu Configuration");
+            hotkeysCategory = MelonPreferences.CreateCategory(HOTKEYS_CATEGORY, "Mimesis Mod Menu Hotkey Configuration");
         }
 
-        public void LoadAllConfigs()
-        {
-            InitializeDefaultHotkeys();
-        }
+        public void LoadAllConfigs() { }
 
-        private void InitializeDefaultHotkeys()
-        {
-            var defaults = new Dictionary<string, HotkeyConfig>
-            {
-                { "ToggleMenu", new HotkeyConfig(KeyCode.Insert) },
-                { "ToggleGodMode", new HotkeyConfig(KeyCode.G, ctrl: true) },
-                { "ToggleInfiniteStamina", new HotkeyConfig(KeyCode.S, ctrl: true) },
-                { "ToggleNoFallDamage", new HotkeyConfig(KeyCode.F, ctrl: true) },
-                { "ToggleSpeedBoost", new HotkeyConfig(KeyCode.D, ctrl: true) },
-                { "ToggleESP", new HotkeyConfig(KeyCode.E, ctrl: true) },
-                { "ToggleAutoLoot", new HotkeyConfig(KeyCode.L, ctrl: true) },
-                { "ToggleFullbright", new HotkeyConfig(KeyCode.B, ctrl: true) },
-            };
-
-            foreach (var kvp in defaults)
-            {
-                if (!hotkeyEntries.ContainsKey(kvp.Key))
-                    SetHotkey(kvp.Key, kvp.Value);
-            }
-
-            MelonPreferences.Save();
-        }
-
-        public string GetString(string key, string defaultValue = "")
-        {
-            return GetOrCreate(stringEntries, key, defaultValue, () => mainCategory.CreateEntry(key, defaultValue, key, ""));
-        }
-
-        public bool GetBool(string key, bool defaultValue = false)
-        {
-            return GetOrCreate(boolEntries, key, defaultValue, () => mainCategory.CreateEntry(key, defaultValue, key, ""));
-        }
-
-        public float GetFloat(string key, float defaultValue = 0f)
-        {
-            return GetOrCreate(floatEntries, key, defaultValue, () => mainCategory.CreateEntry(key, defaultValue, key, ""));
-        }
-
-        private T GetOrCreate<T>(Dictionary<string, MelonPreferences_Entry<T>> dict, string key, T defaultValue, Func<MelonPreferences_Entry<T>> factory)
+        public T GetValue<T>(string key, T defaultValue, string description = "")
         {
             try
             {
-                if (!dict.TryGetValue(key, out var entry))
+                if (typeof(T) == typeof(string))
                 {
-                    entry = factory();
-                    dict[key] = entry;
+                    if (!stringEntries.TryGetValue(key, out var entry))
+                    {
+                        entry = mainCategory.CreateEntry(key, (string)(object)defaultValue, key, description);
+                        stringEntries[key] = entry;
+                    }
+                    return (T)(object)entry.Value;
                 }
-                return entry.Value;
+                else if (typeof(T) == typeof(bool))
+                {
+                    if (!boolEntries.TryGetValue(key, out var entry))
+                    {
+                        entry = mainCategory.CreateEntry(key, (bool)(object)defaultValue, key, description);
+                        boolEntries[key] = entry;
+                    }
+                    return (T)(object)entry.Value;
+                }
+                else if (typeof(T) == typeof(float))
+                {
+                    if (!floatEntries.TryGetValue(key, out var entry))
+                    {
+                        entry = mainCategory.CreateEntry(key, (float)(object)defaultValue, key, description);
+                        floatEntries[key] = entry;
+                    }
+                    return (T)(object)entry.Value;
+                }
+                else
+                {
+                    MelonLogger.Warning($"Unsupported type {typeof(T).Name} for key {key}");
+                    return defaultValue;
+                }
             }
             catch (Exception ex)
             {
@@ -88,34 +71,52 @@ namespace Mimesis_Mod_Menu.Core.Config
             }
         }
 
-        public void SetString(string key, string value)
-        {
-            SetValue(stringEntries, key, value, () => mainCategory.CreateEntry(key, value, key, ""));
-        }
-
-        public void SetBool(string key, bool value)
-        {
-            SetValue(boolEntries, key, value, () => mainCategory.CreateEntry(key, value, key, ""));
-        }
-
-        public void SetFloat(string key, float value)
-        {
-            SetValue(floatEntries, key, value, () => mainCategory.CreateEntry(key, value, key, ""));
-        }
-
-        private void SetValue<T>(Dictionary<string, MelonPreferences_Entry<T>> dict, string key, T value, Func<MelonPreferences_Entry<T>> factory)
+        public void SetValue<T>(string key, T value, string description = "")
         {
             try
             {
-                if (!dict.TryGetValue(key, out var entry))
+                if (typeof(T) == typeof(string))
                 {
-                    entry = factory();
-                    dict[key] = entry;
+                    if (!stringEntries.TryGetValue(key, out var entry))
+                    {
+                        entry = mainCategory.CreateEntry(key, (string)(object)value, key, description);
+                        stringEntries[key] = entry;
+                    }
+                    else
+                    {
+                        entry.Value = (string)(object)value;
+                    }
+                }
+                else if (typeof(T) == typeof(bool))
+                {
+                    if (!boolEntries.TryGetValue(key, out var entry))
+                    {
+                        entry = mainCategory.CreateEntry(key, (bool)(object)value, key, description);
+                        boolEntries[key] = entry;
+                    }
+                    else
+                    {
+                        entry.Value = (bool)(object)value;
+                    }
+                }
+                else if (typeof(T) == typeof(float))
+                {
+                    if (!floatEntries.TryGetValue(key, out var entry))
+                    {
+                        entry = mainCategory.CreateEntry(key, (float)(object)value, key, description);
+                        floatEntries[key] = entry;
+                    }
+                    else
+                    {
+                        entry.Value = (float)(object)value;
+                    }
                 }
                 else
                 {
-                    entry.Value = value;
+                    MelonLogger.Warning($"Unsupported type {typeof(T).Name} for key {key}");
+                    return;
                 }
+
                 MelonPreferences.Save();
             }
             catch (Exception ex)
@@ -133,7 +134,13 @@ namespace Mimesis_Mod_Menu.Core.Config
                     entry = hotkeysCategory.CreateEntry(feature, "None", feature, "");
                     hotkeyEntries[feature] = entry;
                 }
-                return HotkeyConfig.Parse(entry.Value);
+
+                if (entry != null)
+                {
+                    return HotkeyConfig.Parse(entry.Value);
+                }
+
+                return new HotkeyConfig();
             }
             catch (Exception ex)
             {
