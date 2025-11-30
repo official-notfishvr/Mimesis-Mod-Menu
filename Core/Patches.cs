@@ -255,7 +255,7 @@ namespace Mimesis_Mod_Menu.Core
         }
     }
 
-    [HarmonyPatch(typeof(EquipmentItemElement), MethodType.Constructor, new[] { typeof(int), typeof(long), typeof(bool), typeof(int), typeof(int), typeof(int) })]
+    [HarmonyPatch(typeof(EquipmentItemElement), MethodType.Constructor, new[] { typeof(int), typeof(long), typeof(bool), typeof(int), typeof(int), typeof(int), typeof(InventoryController) })]
     internal static class EquipmentItemElementConstructorPatch
     {
         private static void Postfix(EquipmentItemElement __instance)
