@@ -567,7 +567,7 @@ namespace Mimesis_Mod_Menu.Core
 
                         foreach (var item in filteredItems)
                         {
-                            if (GUILayout.Button($"[{item.id}] {item.name}", GUILayout.ExpandWidth(true)))
+                            if (guiHelper?.Button($"[{item.id}] {item.name}", ControlVariant.Secondary, ControlSize.Small) ?? false)
                             {
                                 itemSpawnIDInput = item.id.ToString();
                                 MelonLogger.Msg($"[ItemSpawner] Selected: {item.name} (ID: {item.id})");
