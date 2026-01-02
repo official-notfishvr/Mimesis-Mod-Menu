@@ -1090,76 +1090,87 @@ namespace Mimesis_Mod_Menu.Core
             {
                 cachedItemList.Clear();
                 
-                // Try to find DataManager and access ExcelDataManager.ItemInfoDict
+                object excelDataManager = null;
+                
+                // Try to find DataManager and access ExcelDataManager
                 var dataManager = UnityEngine.Object.FindObjectOfType<DataManager>();
                 if (dataManager != null)
                 {
-                    var excelDataManager = ReflectionHelper.GetFieldValue(dataManager, "_excelDataManager");
-                    if (excelDataManager != null)
+                    excelDataManager = ReflectionHelper.GetFieldValue(dataManager, "_excelDataManager");
+                }
+                
+                // Fallback: Try via Hub path
+                if (excelDataManager == null)
+                {
+                    var hub = UnityEngine.Object.FindObjectOfType<Hub>();
+                    if (hub != null)
                     {
-                        // Get ItemInfoDict property
-                        var itemInfoDict = ReflectionHelper.GetPropertyValue(excelDataManager, "ItemInfoDict");
-                        if (itemInfoDict != null && itemInfoDict is IDictionary dict)
-                        {
-                            foreach (DictionaryEntry entry in dict)
-                            {
-                                int masterId = (int)entry.Key;
-                                var itemInfo = entry.Value;
-                                
-                                // Get item name from ItemMasterInfo
-                                string itemName = "Unknown";
-                                try
-                                {
-                                    var nameField = ReflectionHelper.GetFieldValue(itemInfo, "Name");
-                                    if (nameField != null)
-                                        itemName = nameField.ToString();
-                                }
-                                catch { }
-                                
-                                cachedItemList.Add((masterId, itemName));
-                            }
-                            
-                            // Sort by ID
-                            cachedItemList = cachedItemList.OrderBy(x => x.id).ToList();
-                            itemListLoaded = true;
-                            MelonLogger.Msg($"[ItemSpawner] Loaded {cachedItemList.Count} items from game data");
-                            return;
-                        }
+                        excelDataManager = ReflectionHelper.GetFieldValue(hub, "_excelDataManager") ?? ReflectionHelper.GetPropertyValue(hub, "ExcelDataManager");
                     }
                 }
 
-                // Fallback: Try via Hub path
-                var hub = UnityEngine.Object.FindObjectOfType<Hub>();
-                if (hub != null)
+                if (excelDataManager != null)
                 {
-                    var excelDataMgr = ReflectionHelper.GetFieldValue(hub, "_excelDataManager") ?? ReflectionHelper.GetPropertyValue(hub, "ExcelDataManager");
-                    if (excelDataMgr != null)
+                    // Get ItemInfoDict (MasterID -> ItemMasterInfo)
+                    var itemInfoDict = ReflectionHelper.GetPropertyValue(excelDataManager, "ItemInfoDict") as IDictionary;
+                    
+                    // Get LocalizationDict (Key -> LocalizationData_MasterData)
+                    var localizationDict = ReflectionHelper.GetPropertyValue(excelDataManager, "LocalizationDict") as IDictionary;
+                    
+                    if (itemInfoDict != null)
                     {
-                        var itemDict = ReflectionHelper.GetPropertyValue(excelDataMgr, "ItemInfoDict");
-                        if (itemDict != null && itemDict is IDictionary hubDict)
+                        foreach (DictionaryEntry entry in itemInfoDict)
                         {
-                            foreach (DictionaryEntry entry in hubDict)
-                            {
-                                int masterId = (int)entry.Key;
-                                var itemInfo = entry.Value;
-                                
-                                string itemName = "Unknown";
-                                try
-                                {
-                                    var nameField = ReflectionHelper.GetFieldValue(itemInfo, "Name");
-                                    if (nameField != null)
-                                        itemName = nameField.ToString();
-                                }
-                                catch { }
-                                
-                                cachedItemList.Add((masterId, itemName));
-                            }
+                            int masterId = (int)entry.Key;
+                            var itemInfo = entry.Value;
                             
-                            cachedItemList = cachedItemList.OrderBy(x => x.id).ToList();
-                            itemListLoaded = true;
-                            MelonLogger.Msg($"[ItemSpawner] Loaded {cachedItemList.Count} items via Hub");
-                            return;
+                            string displayName = "Unknown";
+                            try
+                            {
+                                // Get name key from ItemMasterInfo
+                                var nameKeyField = ReflectionHelper.GetFieldValue(itemInfo, "Name");
+                                string nameKey = nameKeyField?.ToString() ?? "";
+                                
+                                // Try to localize
+                                if (localizationDict != null && !string.IsNullOrEmpty(nameKey) && localizationDict.Contains(nameKey))
+                                {
+                                    var locData = localizationDict[nameKey];
+                                    if (locData != null)
+                                    {
+                                        // Try to get Korean first, then English
+                                        var koField = ReflectionHelper.GetFieldValue(locData, "ko");
+                                        var enField = ReflectionHelper.GetFieldValue(locData, "en");
+                                        
+                                        string koText = koField?.ToString();
+                                        string enText = enField?.ToString();
+                                        
+                                        if (!string.IsNullOrEmpty(koText))
+                                            displayName = koText;
+                                        else if (!string.IsNullOrEmpty(enText))
+                                            displayName = enText;
+                                        else
+                                            displayName = nameKey; // Fallback to key
+                                    }
+                                    else
+                                    {
+                                        displayName = nameKey;
+                                    }
+                                }
+                                else
+                                {
+                                    displayName = nameKey;
+                                }
+                            }
+                            catch { }
+                            
+                            cachedItemList.Add((masterId, displayName));
                         }
+                        
+                        // Sort by ID
+                        cachedItemList = cachedItemList.OrderBy(x => x.id).ToList();
+                        itemListLoaded = true;
+                        MelonLogger.Msg($"[ItemSpawner] Loaded {cachedItemList.Count} items from game data");
+                        return;
                     }
                 }
 
