@@ -323,17 +323,16 @@ namespace Mimesis_Mod_Menu.Core
         {
             try
             {
-                scrollPosition =
-                    guiHelper.ScrollView(
-                        scrollPosition,
-                        () =>
-                        {
-                            guiHelper.BeginVerticalGroup(GUILayout.ExpandHeight(true));
-                            demoTabs[currentDemoTab].Content.Invoke();
-                            guiHelper.EndVerticalGroup();
-                        },
-                        GUILayout.Height(700)
-                    );
+                scrollPosition = guiHelper.ScrollView(
+                    scrollPosition,
+                    () =>
+                    {
+                        guiHelper.BeginVerticalGroup(GUILayout.ExpandHeight(true));
+                        demoTabs[currentDemoTab].Content.Invoke();
+                        guiHelper.EndVerticalGroup();
+                    },
+                    GUILayout.Height(700)
+                );
             }
             catch (Exception ex)
             {
@@ -441,7 +440,7 @@ namespace Mimesis_Mod_Menu.Core
                             pickupManager.StartPickupAll();
                     }
 
-                    guiHelper.MutedLabel(isActive  ? "Actively picking up items..." : "Click to start pickup");
+                    guiHelper.MutedLabel(isActive ? "Actively picking up items..." : "Click to start pickup");
                 });
                 guiHelper.EndCard();
 
@@ -510,7 +509,6 @@ namespace Mimesis_Mod_Menu.Core
                 guiHelper?.CardTitle("Item Spawner");
                 guiHelper?.CardContent(() =>
                 {
-                    // Item ID input
                     GUILayout.BeginHorizontal();
                     guiHelper?.Label("Item ID:");
                     itemSpawnIDInput = GUILayout.TextField(itemSpawnIDInput, GUILayout.Width(100));
@@ -522,7 +520,7 @@ namespace Mimesis_Mod_Menu.Core
                     {
                         if (int.TryParse(itemSpawnIDInput, out int itemId))
                         {
-                            SpawnItem(itemId, 1);
+                            ItemSpawnerPatches.SetItemToSpawn(itemId, 1);
                         }
                         else
                         {
@@ -531,10 +529,9 @@ namespace Mimesis_Mod_Menu.Core
                     }
 
                     guiHelper?.AddSpace(12);
-                    GUILayout.Box("", GUILayout.ExpandWidth(true), GUILayout.Height(1)); // Separator line
+                    GUILayout.Box("", GUILayout.ExpandWidth(true), GUILayout.Height(1));
                     guiHelper?.AddSpace(8);
 
-                    // Item Browser section
                     GUILayout.BeginHorizontal();
                     guiHelper?.Label("Item Browser");
                     if (guiHelper?.Button(itemListLoaded ? "Refresh List" : "Load Items", ControlVariant.Secondary, ControlSize.Small) ?? false)
@@ -546,7 +543,7 @@ namespace Mimesis_Mod_Menu.Core
                     if (itemListLoaded && cachedItemList.Count > 0)
                     {
                         guiHelper?.AddSpace(4);
-                        
+
                         GUILayout.BeginHorizontal();
                         guiHelper?.Label("Search:");
                         itemSearchFilter = GUILayout.TextField(itemSearchFilter, GUILayout.Width(200));
@@ -555,12 +552,9 @@ namespace Mimesis_Mod_Menu.Core
                         guiHelper?.AddSpace(4);
                         guiHelper?.MutedLabel($"Found {cachedItemList.Count} items");
 
-                        // Scrollable item list
                         itemListScrollPosition = GUILayout.BeginScrollView(itemListScrollPosition, GUILayout.Height(200));
-                        
-                        var filteredItems = string.IsNullOrEmpty(itemSearchFilter) 
-                            ? cachedItemList.Take(50).ToList()
-                            : cachedItemList.Where(x => x.name.ToLower().Contains(itemSearchFilter.ToLower()) || x.id.ToString().Contains(itemSearchFilter)).Take(50).ToList();
+
+                        var filteredItems = string.IsNullOrEmpty(itemSearchFilter) ? cachedItemList.Take(50).ToList() : cachedItemList.Where(x => x.name.ToLower().Contains(itemSearchFilter.ToLower()) || x.id.ToString().Contains(itemSearchFilter)).Take(50).ToList();
 
                         foreach (var item in filteredItems)
                         {
@@ -570,7 +564,7 @@ namespace Mimesis_Mod_Menu.Core
                                 MelonLogger.Msg($"[ItemSpawner] Selected: {item.name} (ID: {item.id})");
                             }
                         }
-                        
+
                         GUILayout.EndScrollView();
                     }
                     else if (!itemListLoaded)
@@ -980,18 +974,10 @@ namespace Mimesis_Mod_Menu.Core
             }
         }
 
-
-        /// <summary>
-        /// Adds currency to the player's account.
-        /// Uses Hub singleton → VWorld → VRoomManager → MaintenanceRoom path (most reliable).
-        /// Falls back to RoomAPI and other methods if Hub is not available.
-        /// </summary>
         private void AddCurrency(int amount)
         {
             try
             {
-                // Primary method: Hub singleton → VWorld → VRoomManager → MaintenanceRoom
-                // This is the most reliable path discovered through debugging
                 var hub = UnityEngine.Object.FindObjectOfType<Hub>();
                 if (hub != null)
                 {
@@ -1007,52 +993,28 @@ namespace Mimesis_Mod_Menu.Core
                                 foreach (DictionaryEntry entry in vrooms)
                                 {
                                     var room = entry.Value;
-                                    if (room == null) continue;
-                                    
+                                    if (room == null)
+                                        continue;
+
                                     if (room is MaintenanceRoom mRoom)
                                     {
                                         ReflectionHelper.InvokeMethod(mRoom, "AddCurrency", amount);
                                         MelonLogger.Msg($"[AddCurrency] Added {amount} currency successfully!");
                                         return;
                                     }
-                                    
-                                    // Fallback: try Currency property directly
-                                    try
+
+                                    var currentVal = ReflectionHelper.GetPropertyValue(room, "Currency");
+                                    if (currentVal != null)
                                     {
-                                        var currentVal = ReflectionHelper.GetPropertyValue(room, "Currency");
-                                        if (currentVal != null)
-                                        {
-                                            ReflectionHelper.SetPropertyValue(room, "Currency", (int)currentVal + amount);
-                                            MelonLogger.Msg($"[AddCurrency] Added {amount} currency successfully!");
-                                            return;
-                                        }
+                                        ReflectionHelper.SetPropertyValue(room, "Currency", (int)currentVal + amount);
+                                        MelonLogger.Msg($"[AddCurrency] Added {amount} currency successfully!");
+                                        return;
                                     }
-                                    catch { }
                                 }
                             }
                         }
                     }
                 }
-
-                // Fallback: Try RoomAPI (sometimes works depending on game state)
-                var currentRoom = RoomAPI.GetCurrentRoom();
-                if (currentRoom is MaintenanceRoom maintenanceRoom)
-                {
-                    ReflectionHelper.InvokeMethod(maintenanceRoom, "AddCurrency", amount);
-                    MelonLogger.Msg($"[AddCurrency] Added {amount} currency successfully!");
-                    return;
-                }
-
-                // Fallback: Try CoreAPI.GetVWorld()
-                var coreVworld = CoreAPI.GetVWorld();
-                if (coreVworld != null)
-                {
-                    ReflectionHelper.InvokeMethod(coreVworld, "AdminCommandAddCurrency", amount);
-                    MelonLogger.Msg($"[AddCurrency] Added {amount} currency via admin command!");
-                    return;
-                }
-
-                MelonLogger.Warning("[AddCurrency] Failed: No valid room found. Make sure you're in a game session.");
             }
             catch (Exception ex)
             {
@@ -1060,45 +1022,20 @@ namespace Mimesis_Mod_Menu.Core
             }
         }
 
-        /// <summary>
-        /// Spawns an item with the given MasterID directly into the player's inventory.
-        /// Uses ProtoActor.BuyItemByMasterId via Hub path.
-        /// </summary>
-        private void SpawnItem(int itemMasterID, int quantity = 1)
-        {
-            try
-            {
-                // Use the existing patch system which hooks into inventory slot change
-                // This is already implemented and working in Patches.cs
-                ItemSpawnerPatches.SetItemToSpawn(itemMasterID, quantity);
-                MelonLogger.Msg($"[ItemSpawner] Queued item {itemMasterID} x{quantity}");
-                MelonLogger.Msg("[ItemSpawner] Now change inventory slot and spawn the item!");
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Error($"[ItemSpawner] Error: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// Loads the list of all available items from the game's data manager.
-        /// </summary>
         private void LoadItemList()
         {
             try
             {
                 cachedItemList.Clear();
-                
+
                 object excelDataManager = null;
-                
-                // Try to find DataManager and access ExcelDataManager
+
                 var dataManager = UnityEngine.Object.FindObjectOfType<DataManager>();
                 if (dataManager != null)
                 {
                     excelDataManager = ReflectionHelper.GetFieldValue(dataManager, "_excelDataManager");
                 }
-                
-                // Fallback: Try via Hub path
+
                 if (excelDataManager == null)
                 {
                     var hub = UnityEngine.Object.FindObjectOfType<Hub>();
@@ -1110,45 +1047,39 @@ namespace Mimesis_Mod_Menu.Core
 
                 if (excelDataManager != null)
                 {
-                    // Get ItemInfoDict (MasterID -> ItemMasterInfo)
                     var itemInfoDict = ReflectionHelper.GetPropertyValue(excelDataManager, "ItemInfoDict") as IDictionary;
-                    
-                    // Get LocalizationDict (Key -> LocalizationData_MasterData)
                     var localizationDict = ReflectionHelper.GetPropertyValue(excelDataManager, "LocalizationDict") as IDictionary;
-                    
+
                     if (itemInfoDict != null)
                     {
                         foreach (DictionaryEntry entry in itemInfoDict)
                         {
                             int masterId = (int)entry.Key;
                             var itemInfo = entry.Value;
-                            
+
                             string displayName = "Unknown";
                             try
                             {
-                                // Get name key from ItemMasterInfo
                                 var nameKeyField = ReflectionHelper.GetFieldValue(itemInfo, "Name");
                                 string nameKey = nameKeyField?.ToString() ?? "";
-                                
-                                // Try to localize
+
                                 if (localizationDict != null && !string.IsNullOrEmpty(nameKey) && localizationDict.Contains(nameKey))
                                 {
                                     var locData = localizationDict[nameKey];
                                     if (locData != null)
                                     {
-                                        // Try to get Korean first, then English
                                         var koField = ReflectionHelper.GetFieldValue(locData, "ko");
                                         var enField = ReflectionHelper.GetFieldValue(locData, "en");
-                                        
+
                                         string koText = koField?.ToString();
                                         string enText = enField?.ToString();
-                                        
+
                                         if (!string.IsNullOrEmpty(koText))
                                             displayName = koText;
                                         else if (!string.IsNullOrEmpty(enText))
                                             displayName = enText;
                                         else
-                                            displayName = nameKey; // Fallback to key
+                                            displayName = nameKey;
                                     }
                                     else
                                     {
@@ -1161,11 +1092,10 @@ namespace Mimesis_Mod_Menu.Core
                                 }
                             }
                             catch { }
-                            
+
                             cachedItemList.Add((masterId, displayName));
                         }
-                        
-                        // Sort by ID
+
                         cachedItemList = cachedItemList.OrderBy(x => x.id).ToList();
                         itemListLoaded = true;
                         MelonLogger.Msg($"[ItemSpawner] Loaded {cachedItemList.Count} items from game data");
@@ -1174,7 +1104,7 @@ namespace Mimesis_Mod_Menu.Core
                 }
 
                 MelonLogger.Warning("[ItemSpawner] Could not load item list - DataManager not found");
-                itemListLoaded = true; // Mark as attempted
+                itemListLoaded = true;
             }
             catch (Exception ex)
             {
