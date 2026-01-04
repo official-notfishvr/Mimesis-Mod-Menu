@@ -81,6 +81,15 @@ namespace Mimesis_Mod_Menu.Core
             public bool ForceBuy = false;
             public bool ForceRepair = false;
             public bool InfiniteCurrency = false;
+            public bool Fly = false;
+            public float FlySpeed = 10f;
+            public bool DamageMultiplier = false;
+            public float DamageMultiplierValue = 10f;
+            public bool CustomScale = false;
+            public float PlayerScale = 1f;
+            public Vector3 SavedPosition1 = Vector3.zero;
+            public Vector3 SavedPosition2 = Vector3.zero;
+            public Vector3 SavedPosition3 = Vector3.zero;
         }
 
         private FeatureState state = new FeatureState();
@@ -202,6 +211,7 @@ namespace Mimesis_Mod_Menu.Core
                 pickupManager.Update();
                 movementManager.Update();
                 itemSpawnerManager.Update();
+                UpdateFly();
             }
             catch (Exception ex)
             {
@@ -374,11 +384,101 @@ namespace Mimesis_Mod_Menu.Core
                     }
 
                     guiHelper.AddSpace(10);
+
+                    DrawToggleButton(
+                        "Fly",
+                        x =>
+                        {
+                            state.Fly = x;
+                            if (x)
+                                EnableFly();
+                            else
+                                DisableFly();
+                        },
+                        () => state.Fly
+                    );
+
+                    if (state.Fly)
+                    {
+                        guiHelper.AddSpace(8);
+                        DrawFloatSlider("Fly Speed", x => state.FlySpeed = x, () => state.FlySpeed, 5f, 50f, "m/s");
+                        guiHelper.MutedLabel("WASD to move, Space/Ctrl for up/down");
+                    }
+
+                    guiHelper.AddSpace(10);
                     DrawTeleportButton("Forward 50u", 50f);
                     guiHelper.AddSpace(6);
                     DrawTeleportButton("Forward 100u", 100f);
                     guiHelper.AddSpace(6);
                     DrawTeleportButton("Forward 200u", 200f);
+                });
+                guiHelper.EndCard();
+
+                guiHelper.AddSpace(12);
+
+                guiHelper.BeginCard(width: -1, height: -1);
+                guiHelper.CardTitle("Saved Positions");
+                guiHelper.CardContent(() =>
+                {
+                    GUILayout.BeginHorizontal();
+                    if (guiHelper.Button("Save 1", ControlVariant.Default, ControlSize.Small))
+                        SavePosition(1);
+                    if (guiHelper.Button("Load 1", ControlVariant.Secondary, ControlSize.Small))
+                        LoadPosition(1);
+                    GUILayout.EndHorizontal();
+
+                    guiHelper.AddSpace(4);
+
+                    GUILayout.BeginHorizontal();
+                    if (guiHelper.Button("Save 2", ControlVariant.Default, ControlSize.Small))
+                        SavePosition(2);
+                    if (guiHelper.Button("Load 2", ControlVariant.Secondary, ControlSize.Small))
+                        LoadPosition(2);
+                    GUILayout.EndHorizontal();
+
+                    guiHelper.AddSpace(4);
+
+                    GUILayout.BeginHorizontal();
+                    if (guiHelper.Button("Save 3", ControlVariant.Default, ControlSize.Small))
+                        SavePosition(3);
+                    if (guiHelper.Button("Load 3", ControlVariant.Secondary, ControlSize.Small))
+                        LoadPosition(3);
+                    GUILayout.EndHorizontal();
+                });
+                guiHelper.EndCard();
+
+                guiHelper.AddSpace(12);
+
+                guiHelper.BeginCard(width: -1, height: -1);
+                guiHelper.CardTitle("Appearance");
+                guiHelper.CardContent(() =>
+                {
+                    DrawToggleButton(
+                        "Custom Scale",
+                        x =>
+                        {
+                            state.CustomScale = x;
+                            ApplyPlayerScale();
+                        },
+                        () => state.CustomScale
+                    );
+
+                    if (state.CustomScale)
+                    {
+                        guiHelper.AddSpace(8);
+                        DrawFloatSlider(
+                            "Scale",
+                            x =>
+                            {
+                                state.PlayerScale = x;
+                                ApplyPlayerScale();
+                            },
+                            () => state.PlayerScale,
+                            0.1f,
+                            5f,
+                            "x"
+                        );
+                    }
                 });
                 guiHelper.EndCard();
 
@@ -397,6 +497,23 @@ namespace Mimesis_Mod_Menu.Core
                 guiHelper.BeginVerticalGroup(GUILayout.ExpandWidth(true));
 
                 guiHelper.BeginCard(width: -1, height: -1);
+                guiHelper.CardTitle("Damage");
+                guiHelper.CardContent(() =>
+                {
+                    DrawToggleButton("Damage Multiplier", x => state.DamageMultiplier = x, () => state.DamageMultiplier);
+
+                    if (state.DamageMultiplier)
+                    {
+                        guiHelper.AddSpace(8);
+                        DrawFloatSlider("Multiplier", x => state.DamageMultiplierValue = x, () => state.DamageMultiplierValue, 1f, 100f, "x");
+                        guiHelper.MutedLabel($"Current: {state.DamageMultiplierValue:F1}x damage");
+                    }
+                });
+                guiHelper.EndCard();
+
+                guiHelper.AddSpace(12);
+
+                guiHelper.BeginCard(width: -1, height: -1);
                 guiHelper.CardTitle("Bulk Actions");
                 guiHelper.CardContent(() =>
                 {
@@ -407,6 +524,11 @@ namespace Mimesis_Mod_Menu.Core
 
                     if (guiHelper.Button("Kill All Monsters", ControlVariant.Destructive, ControlSize.Default))
                         KillAllActors(ActorType.Monster);
+
+                    guiHelper.AddSpace(10);
+
+                    if (guiHelper.Button("Clear All Monsters", ControlVariant.Destructive, ControlSize.Default))
+                        ClearAllMonsters();
                 });
                 guiHelper.EndCard();
 
@@ -1130,6 +1252,217 @@ namespace Mimesis_Mod_Menu.Core
             catch (Exception ex)
             {
                 MelonLogger.Error($"KillAllActors error: {ex.Message}");
+            }
+        }
+
+        private void ClearAllMonsters()
+        {
+            try
+            {
+                ProtoActor[] allActors = PlayerAPI.GetAllPlayers();
+                int count = 0;
+                foreach (ProtoActor actor in allActors)
+                {
+                    if (actor != null && actor.ActorType == ActorType.Monster)
+                    {
+                        KillActor(actor);
+                        count++;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"ClearAllMonsters error: {ex.Message}");
+            }
+        }
+
+        private void EnableFly()
+        {
+            try
+            {
+                var localPlayer = PlayerAPI.GetLocalPlayer();
+                if (localPlayer == null)
+                    return;
+
+                var cc = localPlayer.GetComponent<CharacterController>();
+                if (cc != null)
+                {
+                    cc.enabled = false;
+                }
+
+                var rb = localPlayer.GetComponent<Rigidbody>();
+                if (rb != null)
+                {
+                    rb.isKinematic = true;
+                    rb.useGravity = false;
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"EnableFly error: {ex.Message}");
+            }
+        }
+
+        private void DisableFly()
+        {
+            try
+            {
+                var localPlayer = PlayerAPI.GetLocalPlayer();
+                if (localPlayer == null)
+                    return;
+
+                var cc = localPlayer.GetComponent<CharacterController>();
+                if (cc != null)
+                {
+                    cc.enabled = true;
+                }
+
+                var rb = localPlayer.GetComponent<Rigidbody>();
+                if (rb != null)
+                {
+                    rb.isKinematic = false;
+                    rb.useGravity = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"DisableFly error: {ex.Message}");
+            }
+        }
+
+        private void UpdateFly()
+        {
+            if (!state.Fly)
+                return;
+
+            try
+            {
+                var localPlayer = PlayerAPI.GetLocalPlayer();
+                if (localPlayer == null)
+                    return;
+
+                var cam = Camera.main;
+                if (cam == null)
+                    return;
+
+                Vector3 moveDir = Vector3.zero;
+                var keyboard = Keyboard.current;
+
+                Vector3 camForward = cam.transform.forward;
+                Vector3 camRight = cam.transform.right;
+
+                if (keyboard.wKey.isPressed)
+                    moveDir += camForward;
+                if (keyboard.sKey.isPressed)
+                    moveDir -= camForward;
+                if (keyboard.aKey.isPressed)
+                    moveDir -= camRight;
+                if (keyboard.dKey.isPressed)
+                    moveDir += camRight;
+                if (keyboard.spaceKey.isPressed)
+                    moveDir += Vector3.up;
+                if (keyboard.leftCtrlKey.isPressed)
+                    moveDir -= Vector3.up;
+
+                if (moveDir != Vector3.zero)
+                {
+                    localPlayer.transform.position += moveDir.normalized * state.FlySpeed * Time.deltaTime;
+                }
+            }
+            catch { }
+        }
+
+        private void SavePosition(int slot)
+        {
+            try
+            {
+                var localPlayer = PlayerAPI.GetLocalPlayer();
+                if (localPlayer == null)
+                    return;
+
+                Vector3 pos = localPlayer.transform.position;
+                switch (slot)
+                {
+                    case 1:
+                        state.SavedPosition1 = pos;
+                        break;
+                    case 2:
+                        state.SavedPosition2 = pos;
+                        break;
+                    case 3:
+                        state.SavedPosition3 = pos;
+                        break;
+                }
+                MelonLogger.Msg($"Saved position {slot}: {pos}");
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"SavePosition error: {ex.Message}");
+            }
+        }
+
+        private void LoadPosition(int slot)
+        {
+            try
+            {
+                var localPlayer = PlayerAPI.GetLocalPlayer();
+                if (localPlayer == null)
+                    return;
+
+                Vector3 pos = Vector3.zero;
+                switch (slot)
+                {
+                    case 1:
+                        pos = state.SavedPosition1;
+                        break;
+                    case 2:
+                        pos = state.SavedPosition2;
+                        break;
+                    case 3:
+                        pos = state.SavedPosition3;
+                        break;
+                }
+
+                if (pos == Vector3.zero)
+                {
+                    MelonLogger.Warning($"Position {slot} not saved yet");
+                    return;
+                }
+
+                var cc = localPlayer.GetComponent<CharacterController>();
+                if (cc != null)
+                    cc.enabled = false;
+                localPlayer.transform.position = pos;
+                if (cc != null)
+                    cc.enabled = true;
+
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"LoadPosition error: {ex.Message}");
+            }
+        }
+
+        private void ApplyPlayerScale()
+        {
+            try
+            {
+                var localPlayer = PlayerAPI.GetLocalPlayer();
+                if (localPlayer == null)
+                    return;
+
+                if (state.CustomScale)
+                {
+                    localPlayer.transform.localScale = Vector3.one * state.PlayerScale;
+                }
+                else
+                {
+                    localPlayer.transform.localScale = Vector3.one;
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"ApplyPlayerScale error: {ex.Message}");
             }
         }
     }

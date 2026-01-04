@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
@@ -608,6 +609,36 @@ namespace Mimesis_Mod_Menu.Core
             catch (Exception ex)
             {
                 MelonLogger.Warning($"MaintenanceSceneOnCurrencyChangedPatch error: {ex.Message}");
+            }
+        }
+    }
+
+    #endregion
+
+    #region Damage Multiplier Patches
+
+    [HarmonyPatch(typeof(StatManager), "ApplyDamage")]
+    internal static class StatManagerApplyDamageMultiplierPatch
+    {
+        private static void Prefix(object args)
+        {
+            try
+            {
+                var fs = Patches.GetFeatureState();
+                if (fs == null || !fs.DamageMultiplier)
+                    return;
+
+                var damageField = args.GetType().GetField("Damage", BindingFlags.Public | BindingFlags.Instance);
+                if (damageField != null)
+                {
+                    long currentDamage = (long)damageField.GetValue(args);
+                    long newDamage = (long)(currentDamage * fs.DamageMultiplierValue);
+                    damageField.SetValue(args, newDamage);
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"StatManagerApplyDamageMultiplierPatch error: {ex.Message}");
             }
         }
     }
