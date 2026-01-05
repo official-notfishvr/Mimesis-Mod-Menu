@@ -2,7 +2,7 @@ using MelonLoader;
 using Mimesis_Mod_Menu.Core;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(Loader), "ModMenu", "2.6.0", "notfishvr")]
+[assembly: MelonInfo(typeof(Loader), "ModMenu", "2.6.1", "notfishvr")]
 [assembly: MelonGame("ReLUGames", "MIMESIS")]
 
 namespace Mimesis_Mod_Menu.Core
