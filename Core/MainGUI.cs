@@ -5,7 +5,6 @@ using System.Linq;
 using MelonLoader;
 using Mimesis_Mod_Menu.Core.Config;
 using Mimesis_Mod_Menu.Core.Features;
-using Mimic;
 using Mimic.Actors;
 using MimicAPI.GameAPI;
 using ReluProtocol.Enum;
@@ -24,8 +23,8 @@ namespace Mimesis_Mod_Menu.Core
         private ConfigManager configManager;
         private Rect windowRect = new Rect(20, 20, 1000, 800);
         private Vector2 scrollPosition;
-        private int currentDemoTab;
-        private Tabs.TabConfig[] demoTabs;
+        private int currentTab;
+        private TabConfig[] tabs;
 
         private PickupManager pickupManager;
         private MovementManager movementManager;
@@ -33,489 +32,339 @@ namespace Mimesis_Mod_Menu.Core
         private FullbrightManager fullbrightManager;
         private ItemSpawnerManager itemSpawnerManager;
 
-        private ProtoActor selectedPlayer;
-        private ProtoActor[] cachedPlayers;
-        private float lastPlayerCacheTime;
-
-        private string editingHotkey = "";
         private bool isListeningForHotkey = false;
-        private KeyCode pendingKey = KeyCode.None;
-        private bool pendingShift,
-            pendingCtrl,
-            pendingAlt;
+        private string activeHotkeyId = "";
+
         private string itemSpawnIDInput = "1001";
         private string itemSearchFilter = "";
         private Vector2 itemListScrollPosition;
         private List<(int id, string name)> cachedItemList = new List<(int, string)>();
         private bool itemListLoaded = false;
 
-        private bool showDemoWindow = true;
+        private bool showMenu = true;
         private float lastMenuToggleTime;
+        private const float HOTKEY_COOLDOWN = 0.2f;
 
-        private const float PLAYER_CACHE_INTERVAL = 5f;
-        private const float HOTKEY_COOLDOWN = 0.5f;
+        private ProtoActor[] cachedPlayers = new ProtoActor[0];
+        private ProtoActor selectedPlayer;
+        private float lastPlayerCacheTime;
+        private const float PLAYER_CACHE_INTERVAL = 1f;
 
         public class FeatureState
         {
-            public bool GodMode = false;
-            public bool InfiniteStamina = false;
-            public bool NoFallDamage = false;
-            public bool SpeedBoost = false;
+            public bool GodMode;
+            public bool InfiniteStamina;
+            public bool NoFallDamage;
+            public bool SpeedBoost;
             public float SpeedMultiplier = 2f;
-            public bool ESP = false;
+            public bool ESP;
             public float ESPDistance = 150f;
-            public bool ESPShowLoot = false;
-            public bool ESPShowPlayers = false;
-            public bool ESPShowMonsters = false;
-            public bool ESPShowInteractors = false;
-            public bool ESPShowNPCs = false;
-            public bool ESPShowFieldSkills = false;
-            public bool ESPShowProjectiles = false;
-            public bool ESPShowAuraSkills = false;
-            public bool AutoLoot = false;
+            public bool ESPShowLoot;
+            public bool ESPShowPlayers;
+            public bool ESPShowMonsters;
+            public bool ESPShowInteractors;
+            public bool ESPShowNPCs;
+            public bool ESPShowFieldSkills;
+            public bool ESPShowProjectiles;
+            public bool ESPShowAuraSkills;
+            public bool AutoLoot;
             public float AutoLootDistance = 50f;
-            public bool Fullbright = false;
-            public bool InfiniteDurability = false;
-            public bool InfinitePrice = false;
-            public bool InfiniteGauge = false;
-            public bool ForceBuy = false;
-            public bool ForceRepair = false;
-            public bool InfiniteCurrency = false;
-            public bool Fly = false;
+            public bool Fullbright;
+            public bool InfiniteDurability;
+            public bool InfinitePrice;
+            public bool InfiniteGauge;
+            public bool ForceBuy;
+            public bool ForceRepair;
+            public bool InfiniteCurrency;
+            public bool Fly;
             public float FlySpeed = 10f;
-            public bool DamageMultiplier = false;
+            public bool DamageMultiplier;
             public float DamageMultiplierValue = 10f;
-            public bool CustomScale = false;
+            public bool CustomScale;
             public float PlayerScale = 1f;
-            public Vector3 SavedPosition1 = Vector3.zero;
-            public Vector3 SavedPosition2 = Vector3.zero;
-            public Vector3 SavedPosition3 = Vector3.zero;
+            public Vector3[] SavedPositions = new Vector3[3];
+            public Vector3 SavedPosition1;
+            public Vector3 SavedPosition2;
+            public Vector3 SavedPosition3;
         }
 
-        private FeatureState state = new FeatureState();
+        private readonly FeatureState state = new FeatureState();
 
         void Start()
         {
-            try
+            guiHelper = new GUIHelper();
+            configManager = new ConfigManager();
+
+            autoLootManager = new AutoLootManager();
+            fullbrightManager = new FullbrightManager();
+            pickupManager = new PickupManager();
+            movementManager = new MovementManager();
+            itemSpawnerManager = new ItemSpawnerManager();
+
+            tabs = new TabConfig[] { new TabConfig("Player", DrawPlayerTab), new TabConfig("Combat", DrawCombatTab), new TabConfig("Loot", DrawLootTab), new TabConfig("Visual", DrawVisualTab), new TabConfig("Entities", DrawEntitiesTab), new TabConfig("Settings", DrawSettingsTab) };
+
+            if (configManager.GetHotkey("ToggleMenu").Key == KeyCode.None)
             {
-                guiHelper = new GUIHelper();
-                configManager = new ConfigManager();
-
-                demoTabs = new Tabs.TabConfig[]
-                {
-                    new Tabs.TabConfig("Player", DrawPlayerTab),
-                    new Tabs.TabConfig("Combat", DrawCombatTab),
-                    new Tabs.TabConfig("Loot", DrawLootTab),
-                    new Tabs.TabConfig("Visual", DrawVisualTab),
-                    new Tabs.TabConfig("Entities", DrawEntitiesTab),
-                    new Tabs.TabConfig("Settings", DrawSettingsTab),
-                };
-
-                autoLootManager = new AutoLootManager();
-                fullbrightManager = new FullbrightManager();
-                pickupManager = new PickupManager();
-                movementManager = new MovementManager();
-                itemSpawnerManager = new ItemSpawnerManager();
-
-                ESPManager.Initialize();
-                Patches.ApplyPatches(configManager);
-
-                var toggleMenuHotkey = configManager.GetHotkey("ToggleMenu");
-                if (toggleMenuHotkey.Key == KeyCode.None)
-                {
-                    configManager.SetHotkey("ToggleMenu", new HotkeyConfig(KeyCode.Insert, false, false, false));
-                    MelonLogger.Msg("Set ToggleMenu hotkey to Insert");
-                }
-
-                bool enabled = configManager.GetValue<bool>("Enabled", true, "Enable or disable the mod menu");
-                if (!enabled)
-                    showDemoWindow = false;
-
-                MelonLogger.Msg("Mimesis Mod Menu initialized successfully");
+                configManager.SetHotkey("ToggleMenu", new HotkeyConfig(KeyCode.Insert, false, false, false));
             }
-            catch (Exception ex)
-            {
-                MelonLogger.Error($"Start error: {ex.Message}");
-            }
+
+            ESPManager.Initialize();
+            Patches.ApplyPatches(configManager);
+
+            bool enabled = configManager.GetValue<bool>("Enabled", true);
+            if (!enabled)
+                showMenu = false;
+
+            MelonLogger.Msg("Mimesis Mod Menu initialized");
         }
 
         void Update()
         {
-            try
+            if (configManager == null)
+                return;
+
+            autoLootManager?.Update();
+            fullbrightManager?.Update();
+            pickupManager?.Update();
+            movementManager?.Update();
+            itemSpawnerManager?.Update();
+            if (!configManager.GetValue<bool>("Enabled", true))
+                return;
+
+            HandleInput();
+        }
+
+        private void HandleInput()
+        {
+            if (isListeningForHotkey)
+                return;
+
+            if (CheckHotkey("ToggleMenu") && Time.time - lastMenuToggleTime > HOTKEY_COOLDOWN)
             {
-                if (configManager == null)
-                {
-                    autoLootManager.Update();
-                    fullbrightManager.Update();
-                    pickupManager.Update();
-                    movementManager.Update();
-                    itemSpawnerManager.Update();
-                    return;
-                }
+                showMenu = !showMenu;
+                lastMenuToggleTime = Time.time;
+            }
 
-                bool menuEnabled = configManager.GetValue<bool>("Enabled", true);
-                if (!menuEnabled)
-                {
-                    autoLootManager.Update();
-                    fullbrightManager.Update();
-                    pickupManager.Update();
-                    movementManager.Update();
-                    itemSpawnerManager.Update();
-                    return;
-                }
+            if (!showMenu && !configManager.GetValue<bool>("BackgroundInput", true))
+                return;
 
-                if (isListeningForHotkey)
-                {
-                    DetectHotkeyInput();
-                    return;
-                }
+            if (CheckHotkey("ToggleGodMode"))
+                ToggleBool(v => state.GodMode = v, state.GodMode);
+            if (CheckHotkey("ToggleInfiniteStamina"))
+                ToggleBool(v => state.InfiniteStamina = v, state.InfiniteStamina);
+            if (CheckHotkey("ToggleNoFallDamage"))
+                ToggleBool(v => state.NoFallDamage = v, state.NoFallDamage);
+            if (CheckHotkey("ToggleSpeedBoost"))
+                ToggleBool(v => state.SpeedBoost = v, state.SpeedBoost);
+            if (CheckHotkey("ToggleESP"))
+                ToggleBool(v => state.ESP = v, state.ESP);
 
-                if (configManager.GetHotkey("ToggleMenu").IsPressed())
-                {
-                    if (Time.time - lastMenuToggleTime > HOTKEY_COOLDOWN)
-                    {
-                        showDemoWindow = !showDemoWindow;
-                        lastMenuToggleTime = Time.time;
-                    }
-                }
+            if (CheckHotkey("ToggleAutoLoot"))
+            {
+                state.AutoLoot = !state.AutoLoot;
+                autoLootManager.SetEnabled(state.AutoLoot);
+            }
 
-                if (configManager.GetHotkey("ToggleGodMode").IsPressed())
-                    ToggleBool("godMode", x => state.GodMode = x, () => state.GodMode);
+            if (CheckHotkey("ToggleFullbright"))
+            {
+                state.Fullbright = !state.Fullbright;
+                fullbrightManager.SetEnabled(state.Fullbright);
+            }
 
-                if (configManager.GetHotkey("ToggleInfiniteStamina").IsPressed())
-                    ToggleBool("infiniteStamina", x => state.InfiniteStamina = x, () => state.InfiniteStamina);
-
-                if (configManager.GetHotkey("ToggleNoFallDamage").IsPressed())
-                    ToggleBool("noFallDamage", x => state.NoFallDamage = x, () => state.NoFallDamage);
-
-                if (configManager.GetHotkey("ToggleSpeedBoost").IsPressed())
-                    ToggleBool("speedBoost", x => state.SpeedBoost = x, () => state.SpeedBoost);
-
-                if (configManager.GetHotkey("ToggleESP").IsPressed())
-                    ToggleBool("espEnabled", x => state.ESP = x, () => state.ESP);
-
-                if (configManager.GetHotkey("ToggleAutoLoot").IsPressed())
-                {
-                    state.AutoLoot = !state.AutoLoot;
-                    autoLootManager.SetEnabled(state.AutoLoot);
-                }
-
-                if (configManager.GetHotkey("ToggleFullbright").IsPressed())
-                {
-                    state.Fullbright = !state.Fullbright;
-                    fullbrightManager.SetEnabled(state.Fullbright);
-                }
-
-                autoLootManager.Update();
-                fullbrightManager.Update();
-                pickupManager.Update();
-                movementManager.Update();
-                itemSpawnerManager.Update();
+            if (state.Fly)
                 UpdateFly();
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Error($"Update error: {ex.Message}");
-            }
         }
 
-        private void ToggleBool(string key, Action<bool> setter, Func<bool> getter)
+        private bool CheckHotkey(string name)
         {
-            bool newVal = !getter();
-            setter(newVal);
+            return configManager.GetHotkey(name).IsPressed();
         }
 
-        private void DetectHotkeyInput()
+        private void ToggleBool(Action<bool> setter, bool currentValue)
         {
-            try
-            {
-                var keyboard = Keyboard.current;
-                if (keyboard.escapeKey.wasPressedThisFrame == true)
-                {
-                    isListeningForHotkey = false;
-                    return;
-                }
-
-                KeyCode[] allKeys = (KeyCode[])System.Enum.GetValues(typeof(KeyCode));
-                foreach (KeyCode key in allKeys)
-                {
-                    if (key == KeyCode.None || key == KeyCode.Escape)
-                        continue;
-
-                    try
-                    {
-                        var targetKey = keyboard.FindKeyOnCurrentKeyboardLayout(key.ToString());
-                        if (targetKey.wasPressedThisFrame == true)
-                        {
-                            pendingKey = key;
-                            pendingShift = keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed;
-                            pendingCtrl = keyboard.leftCtrlKey.isPressed || keyboard.rightCtrlKey.isPressed;
-                            pendingAlt = keyboard.leftAltKey.isPressed || keyboard.rightAltKey.isPressed;
-                            isListeningForHotkey = false;
-                            return;
-                        }
-                    }
-                    catch
-                    {
-                        continue;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Warning($"DetectHotkeyInput error: {ex.Message}");
-                isListeningForHotkey = false;
-            }
+            setter(!currentValue);
         }
 
         void OnGUI()
         {
-            try
+            if (!configManager.GetValue<bool>("Enabled", true))
+                return;
+
+            GUI.skin.horizontalScrollbar = GUIStyle.none;
+            GUI.skin.verticalScrollbar = GUIStyle.none;
+
+            if (isListeningForHotkey)
             {
-                bool menuEnabled = configManager.GetValue<bool>("Enabled", true);
-                if (!menuEnabled)
-                    return;
-
-                GUI.color = Color.white;
-                if (GUI.Button(new Rect(10, 10, 150, 30), showDemoWindow ? "Hide Menu" : "Show Menu"))
-                    showDemoWindow = !showDemoWindow;
-
-                if (showDemoWindow)
-                    windowRect = GUI.Window(101, windowRect, DrawDemoWindow, "Mimesis Mod Menu");
-
-                ESPManager.UpdateESP();
+                HandleHotkeyBindingEvent();
             }
-            catch (Exception ex)
+
+            if (showMenu)
             {
-                MelonLogger.Error($"OnGUI error: {ex.Message}");
+                windowRect = GUI.Window(101, windowRect, DrawWindow, "Mimesis Mod Menu");
+            }
+
+            ESPManager.UpdateESP();
+            guiHelper.DrawOverlay();
+        }
+
+        private void HandleHotkeyBindingEvent()
+        {
+            Event e = Event.current;
+            if (e.type == EventType.KeyDown)
+            {
+                if (e.keyCode != KeyCode.None && e.keyCode != KeyCode.Escape)
+                {
+                    configManager.SetHotkey(activeHotkeyId, new HotkeyConfig(e.keyCode, e.shift, e.control, e.alt));
+                }
+                isListeningForHotkey = false;
+                activeHotkeyId = "";
             }
         }
 
-        void OnDestroy()
+        void DrawWindow(int windowID)
         {
-            try
+            guiHelper.UpdateGUI(showMenu);
+
+            if (!guiHelper.BeginGUI())
             {
-                fullbrightManager.Cleanup();
-                ESPManager.Cleanup();
-                pickupManager.Stop();
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Error($"OnDestroy error: {ex.Message}");
-            }
-        }
-
-        public FeatureState GetFeatureState()
-        {
-            return state;
-        }
-
-        void DrawDemoWindow(int windowID)
-        {
-            try
-            {
-                guiHelper.UpdateGUI(showDemoWindow);
-                if (!(guiHelper.BeginGUI()))
-                    return;
-
-                currentDemoTab = guiHelper.VerticalTabs(demoTabs.Select(t => t.Name).ToArray() ?? new string[0], currentDemoTab, DrawCurrentTabContent, tabWidth: 140f, maxLines: 1);
-
-                guiHelper.EndGUI();
                 GUI.DragWindow();
+                return;
             }
-            catch (Exception ex)
-            {
-                MelonLogger.Error($"DrawDemoWindow error: {ex.Message}");
-            }
+
+            currentTab = guiHelper.VerticalTabs(tabs.Select(t => t.Name).ToArray(), currentTab, DrawActiveTab, maxLines: 1);
+
+            guiHelper.EndGUI();
+            GUI.DragWindow();
         }
 
-        void DrawCurrentTabContent()
+        void DrawActiveTab()
         {
-            try
-            {
-                scrollPosition = guiHelper.ScrollView(
-                    scrollPosition,
-                    () =>
-                    {
-                        guiHelper.BeginVerticalGroup(GUILayout.ExpandHeight(true));
-                        demoTabs[currentDemoTab].Content.Invoke();
-                        guiHelper.EndVerticalGroup();
-                    },
-                    GUILayout.Height(700)
-                );
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Error($"DrawCurrentTabContent error: {ex.Message}");
-            }
+            scrollPosition = guiHelper.ScrollView(
+                scrollPosition,
+                () =>
+                {
+                    guiHelper.BeginVerticalGroup(GUILayout.ExpandHeight(true));
+                    tabs[currentTab].Content.Invoke();
+                    guiHelper.EndVerticalGroup();
+                },
+                GUILayout.Height(700)
+            );
         }
 
         void DrawPlayerTab()
         {
-            try
-            {
-                guiHelper.BeginVerticalGroup(GUILayout.ExpandWidth(true));
+            guiHelper.BeginVerticalGroup(GUILayout.ExpandWidth(true));
 
-                guiHelper.BeginCard(width: -1, height: -1);
-                guiHelper.CardTitle("Defense");
-                guiHelper.CardContent(() =>
+            DrawCard(
+                "Defense",
+                () =>
                 {
-                    DrawToggleButton("God Mode", x => state.GodMode = x, () => state.GodMode);
+                    DrawCheckbox("God Mode", v => state.GodMode = v, state.GodMode, "ToggleGodMode");
                     guiHelper.AddSpace(8);
-                    DrawToggleButton("No Fall Damage", x => state.NoFallDamage = x, () => state.NoFallDamage);
+                    DrawCheckbox("No Fall Damage", v => state.NoFallDamage = v, state.NoFallDamage, "ToggleNoFallDamage");
                     guiHelper.AddSpace(8);
-                    DrawToggleButton("Infinite Stamina", x => state.InfiniteStamina = x, () => state.InfiniteStamina);
-                });
-                guiHelper.EndCard();
+                    DrawCheckbox("Infinite Stamina", v => state.InfiniteStamina = v, state.InfiniteStamina, "ToggleInfiniteStamina");
+                }
+            );
 
-                guiHelper.AddSpace(12);
+            guiHelper.AddSpace(12);
 
-                guiHelper.BeginCard(width: -1, height: -1);
-                guiHelper.CardTitle("Movement");
-                guiHelper.CardContent(() =>
+            DrawCard(
+                "Movement",
+                () =>
                 {
-                    DrawToggleButton("Speed Boost", x => state.SpeedBoost = x, () => state.SpeedBoost);
-
+                    DrawCheckbox("Speed Boost", v => state.SpeedBoost = v, state.SpeedBoost, "ToggleSpeedBoost");
                     if (state.SpeedBoost)
                     {
                         guiHelper.AddSpace(8);
-                        DrawFloatSlider("Multiplier", x => state.SpeedMultiplier = x, () => state.SpeedMultiplier, 1f, 5f, "x");
-                        guiHelper.MutedLabel($"Current: {state.SpeedMultiplier:F2}x");
+                        DrawSlider("Multiplier", v => state.SpeedMultiplier = v, state.SpeedMultiplier, 1f, 5f, "x");
                     }
 
                     guiHelper.AddSpace(10);
 
-                    DrawToggleButton(
+                    DrawCheckbox(
                         "Fly",
-                        x =>
+                        v =>
                         {
-                            state.Fly = x;
-                            if (x)
+                            state.Fly = v;
+                            if (v)
                                 EnableFly();
                             else
                                 DisableFly();
                         },
-                        () => state.Fly
+                        state.Fly
                     );
 
                     if (state.Fly)
                     {
                         guiHelper.AddSpace(8);
-                        DrawFloatSlider("Fly Speed", x => state.FlySpeed = x, () => state.FlySpeed, 5f, 50f, "m/s");
-                        guiHelper.MutedLabel("WASD to move, Space/Ctrl for up/down");
+                        DrawSlider("Fly Speed", v => state.FlySpeed = v, state.FlySpeed, 5f, 50f, "m/s");
                     }
 
                     guiHelper.AddSpace(10);
-                    DrawTeleportButton("Forward 50u", 50f);
-                    guiHelper.AddSpace(6);
-                    DrawTeleportButton("Forward 100u", 100f);
-                    guiHelper.AddSpace(6);
-                    DrawTeleportButton("Forward 200u", 200f);
-                });
-                guiHelper.EndCard();
+                    DrawTeleportControls();
+                }
+            );
 
-                guiHelper.AddSpace(12);
+            guiHelper.AddSpace(12);
 
-                guiHelper.BeginCard(width: -1, height: -1);
-                guiHelper.CardTitle("Saved Positions");
-                guiHelper.CardContent(() =>
+            DrawCard(
+                "Appearance",
+                () =>
                 {
-                    GUILayout.BeginHorizontal();
-                    if (guiHelper.Button("Save 1", ControlVariant.Default, ControlSize.Small))
-                        SavePosition(1);
-                    if (guiHelper.Button("Load 1", ControlVariant.Secondary, ControlSize.Small))
-                        LoadPosition(1);
-                    GUILayout.EndHorizontal();
-
-                    guiHelper.AddSpace(4);
-
-                    GUILayout.BeginHorizontal();
-                    if (guiHelper.Button("Save 2", ControlVariant.Default, ControlSize.Small))
-                        SavePosition(2);
-                    if (guiHelper.Button("Load 2", ControlVariant.Secondary, ControlSize.Small))
-                        LoadPosition(2);
-                    GUILayout.EndHorizontal();
-
-                    guiHelper.AddSpace(4);
-
-                    GUILayout.BeginHorizontal();
-                    if (guiHelper.Button("Save 3", ControlVariant.Default, ControlSize.Small))
-                        SavePosition(3);
-                    if (guiHelper.Button("Load 3", ControlVariant.Secondary, ControlSize.Small))
-                        LoadPosition(3);
-                    GUILayout.EndHorizontal();
-                });
-                guiHelper.EndCard();
-
-                guiHelper.AddSpace(12);
-
-                guiHelper.BeginCard(width: -1, height: -1);
-                guiHelper.CardTitle("Appearance");
-                guiHelper.CardContent(() =>
-                {
-                    DrawToggleButton(
+                    DrawCheckbox(
                         "Custom Scale",
-                        x =>
+                        v =>
                         {
-                            state.CustomScale = x;
+                            state.CustomScale = v;
                             ApplyPlayerScale();
                         },
-                        () => state.CustomScale
+                        state.CustomScale
                     );
-
                     if (state.CustomScale)
                     {
                         guiHelper.AddSpace(8);
-                        DrawFloatSlider(
+                        DrawSlider(
                             "Scale",
-                            x =>
+                            v =>
                             {
-                                state.PlayerScale = x;
+                                state.PlayerScale = v;
                                 ApplyPlayerScale();
                             },
-                            () => state.PlayerScale,
+                            state.PlayerScale,
                             0.1f,
                             5f,
                             "x"
                         );
                     }
-                });
-                guiHelper.EndCard();
+                }
+            );
 
-                guiHelper.EndVerticalGroup();
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Error($"DrawPlayerTab error: {ex.Message}");
-            }
+            guiHelper.EndVerticalGroup();
         }
 
         void DrawCombatTab()
         {
-            try
-            {
-                guiHelper.BeginVerticalGroup(GUILayout.ExpandWidth(true));
+            guiHelper.BeginVerticalGroup(GUILayout.ExpandWidth(true));
 
-                guiHelper.BeginCard(width: -1, height: -1);
-                guiHelper.CardTitle("Damage");
-                guiHelper.CardContent(() =>
+            DrawCard(
+                "Damage",
+                () =>
                 {
-                    DrawToggleButton("Damage Multiplier", x => state.DamageMultiplier = x, () => state.DamageMultiplier);
-
+                    DrawCheckbox("Damage Multiplier", v => state.DamageMultiplier = v, state.DamageMultiplier);
                     if (state.DamageMultiplier)
                     {
                         guiHelper.AddSpace(8);
-                        DrawFloatSlider("Multiplier", x => state.DamageMultiplierValue = x, () => state.DamageMultiplierValue, 1f, 100f, "x");
-                        guiHelper.MutedLabel($"Current: {state.DamageMultiplierValue:F1}x damage");
+                        DrawSlider("Multiplier", v => state.DamageMultiplierValue = v, state.DamageMultiplierValue, 1f, 100f, "x");
                     }
-                });
-                guiHelper.EndCard();
+                }
+            );
 
-                guiHelper.AddSpace(12);
+            guiHelper.AddSpace(12);
 
-                guiHelper.BeginCard(width: -1, height: -1);
-                guiHelper.CardTitle("Bulk Actions");
-                guiHelper.CardContent(() =>
+            DrawCard(
+                "Bulk Actions",
+                () =>
                 {
                     if (guiHelper.Button("Kill All Players", ControlVariant.Destructive, ControlSize.Default))
                         KillAllActors(ActorType.Player);
@@ -529,334 +378,331 @@ namespace Mimesis_Mod_Menu.Core
 
                     if (guiHelper.Button("Clear All Monsters", ControlVariant.Destructive, ControlSize.Default))
                         ClearAllMonsters();
-                });
-                guiHelper.EndCard();
+                }
+            );
 
-                guiHelper.EndVerticalGroup();
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Error($"DrawCombatTab error: {ex.Message}");
-            }
+            guiHelper.EndVerticalGroup();
         }
 
         void DrawLootTab()
         {
-            try
-            {
-                guiHelper.BeginVerticalGroup(GUILayout.ExpandWidth(true));
+            guiHelper.BeginVerticalGroup(GUILayout.ExpandWidth(true));
 
-                guiHelper.BeginCard(width: -1, height: -1);
-                guiHelper.CardTitle("Item Collection");
-                guiHelper.CardContent(() =>
+            DrawCard(
+                "Item Collection",
+                () =>
                 {
                     bool isActive = pickupManager.isActive;
-                    string buttonText = isActive ? "Stop Picking Up" : "Pickup All Items";
-                    ControlVariant variant = isActive ? ControlVariant.Destructive : ControlVariant.Default;
-
-                    if (guiHelper.Button(buttonText, variant, ControlSize.Default))
+                    if (guiHelper.Button(isActive ? "Stop Picking Up" : "Pickup All Items", isActive ? ControlVariant.Destructive : ControlVariant.Default, ControlSize.Default))
                     {
                         if (isActive)
                             pickupManager.Stop();
                         else
                             pickupManager.StartPickupAll();
                     }
+                }
+            );
 
-                    guiHelper.MutedLabel(isActive ? "Actively picking up items..." : "Click to start pickup");
-                });
-                guiHelper.EndCard();
+            guiHelper.AddSpace(12);
 
-                guiHelper.AddSpace(12);
-
-                guiHelper.BeginCard(width: -1, height: -1);
-                guiHelper.CardTitle("Auto Loot");
-                guiHelper.CardContent(() =>
+            DrawCard(
+                "Auto Loot",
+                () =>
                 {
-                    DrawToggleButton("Auto Loot Enabled", x => state.AutoLoot = x, () => state.AutoLoot);
+                    DrawCheckbox(
+                        "Auto Loot Enabled",
+                        v =>
+                        {
+                            state.AutoLoot = v;
+                            autoLootManager.SetEnabled(v);
+                        },
+                        state.AutoLoot,
+                        "ToggleAutoLoot"
+                    );
 
                     if (state.AutoLoot)
                     {
                         guiHelper.AddSpace(8);
-                        DrawFloatSlider("Detection Range", x => state.AutoLootDistance = x, () => state.AutoLootDistance, 10f, 200f, "m");
-                        autoLootManager.SetDistance(state.AutoLootDistance);
-                        guiHelper.MutedLabel($"Current: {state.AutoLootDistance:F1}m");
-                    }
-                });
-                guiHelper.EndCard();
-
-                guiHelper.AddSpace(12);
-
-                guiHelper.BeginCard(width: -1, height: -1);
-                guiHelper.CardTitle("Equipment");
-                guiHelper.CardContent(() =>
-                {
-                    DrawToggleButton("Infinite Durability", x => state.InfiniteDurability = x, () => state.InfiniteDurability);
-                    guiHelper.AddSpace(8);
-                    DrawToggleButton("Infinite Gauge", x => state.InfiniteGauge = x, () => state.InfiniteGauge);
-                });
-                guiHelper.EndCard();
-
-                guiHelper.AddSpace(12);
-
-                guiHelper.BeginCard(width: -1, height: -1);
-                guiHelper.CardTitle("Commerce");
-                guiHelper.CardContent(() =>
-                {
-                    DrawToggleButton("Infinite Currency", x => state.InfiniteCurrency = x, () => state.InfiniteCurrency);
-                    guiHelper.AddSpace(8);
-                    DrawToggleButton("Infinite Price", x => state.InfinitePrice = x, () => state.InfinitePrice);
-                    guiHelper?.AddSpace(8);
-                    if (guiHelper?.Button("Add 10,000 Currency", ControlVariant.Default, ControlSize.Default) ?? false)
-                    {
-                        AddCurrency(10000);
-                    }
-                });
-                guiHelper.EndCard();
-
-                guiHelper.AddSpace(12);
-
-                guiHelper.BeginCard(width: -1, height: -1);
-                guiHelper.CardTitle("Shop Actions");
-                guiHelper.CardContent(() =>
-                {
-                    DrawToggleButton("Force Buy", x => state.ForceBuy = x, () => state.ForceBuy);
-                    guiHelper.AddSpace(8);
-                    DrawToggleButton("Force Repair", x => state.ForceRepair = x, () => state.ForceRepair);
-                });
-                guiHelper.EndCard();
-
-                guiHelper?.AddSpace(12);
-
-                guiHelper?.BeginCard(width: -1, height: -1);
-                guiHelper?.CardTitle("Item Spawner");
-                guiHelper?.CardContent(() =>
-                {
-                    GUILayout.BeginHorizontal();
-                    guiHelper?.Label("Item ID:");
-                    itemSpawnIDInput = GUILayout.TextField(itemSpawnIDInput, GUILayout.Width(100));
-                    GUILayout.EndHorizontal();
-
-                    guiHelper?.AddSpace(4);
-
-                    if (guiHelper?.Button("Spawn Item", ControlVariant.Default, ControlSize.Default) ?? false)
-                    {
-                        if (int.TryParse(itemSpawnIDInput, out int itemId))
-                        {
-                            ItemSpawnerPatches.SetItemToSpawn(itemId, 1);
-                        }
-                        else
-                        {
-                            MelonLogger.Warning("[ItemSpawner] Invalid item ID");
-                        }
-                    }
-
-                    guiHelper?.AddSpace(12);
-                    GUILayout.Box("", GUILayout.ExpandWidth(true), GUILayout.Height(1));
-                    guiHelper?.AddSpace(8);
-
-                    GUILayout.BeginHorizontal();
-                    guiHelper?.Label("Item Browser");
-                    if (guiHelper?.Button(itemListLoaded ? "Refresh List" : "Load Items", ControlVariant.Secondary, ControlSize.Small) ?? false)
-                    {
-                        LoadItemList();
-                    }
-                    GUILayout.EndHorizontal();
-
-                    if (itemListLoaded && cachedItemList.Count > 0)
-                    {
-                        guiHelper?.AddSpace(4);
-
-                        GUILayout.BeginHorizontal();
-                        guiHelper?.Label("Search:");
-                        itemSearchFilter = GUILayout.TextField(itemSearchFilter, GUILayout.Width(200));
-                        GUILayout.EndHorizontal();
-
-                        guiHelper?.AddSpace(4);
-                        guiHelper?.MutedLabel($"Found {cachedItemList.Count} items");
-
-                        itemListScrollPosition = GUILayout.BeginScrollView(itemListScrollPosition, GUILayout.Height(200));
-
-                        var filteredItems = string.IsNullOrEmpty(itemSearchFilter) ? cachedItemList.Take(50).ToList() : cachedItemList.Where(x => x.name.ToLower().Contains(itemSearchFilter.ToLower()) || x.id.ToString().Contains(itemSearchFilter)).Take(50).ToList();
-
-                        foreach (var item in filteredItems)
-                        {
-                            if (guiHelper?.Button($"[{item.id}] {item.name}", ControlVariant.Secondary, ControlSize.Small) ?? false)
+                        DrawSlider(
+                            "Detection Range",
+                            v =>
                             {
-                                itemSpawnIDInput = item.id.ToString();
-                                MelonLogger.Msg($"[ItemSpawner] Selected: {item.name} (ID: {item.id})");
-                            }
-                        }
+                                state.AutoLootDistance = v;
+                                autoLootManager.SetDistance(v);
+                            },
+                            state.AutoLootDistance,
+                            10f,
+                            200f,
+                            "m"
+                        );
+                    }
+                }
+            );
 
-                        GUILayout.EndScrollView();
-                    }
-                    else if (!itemListLoaded)
-                    {
-                        guiHelper?.MutedLabel("Click 'Load Items' to browse available items");
-                    }
-                    else
-                    {
-                        guiHelper?.MutedLabel("No items found");
-                    }
-                });
-                guiHelper?.EndCard();
+            guiHelper.AddSpace(12);
 
-                guiHelper?.EndVerticalGroup();
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Error($"DrawLootTab error: {ex.Message}");
-            }
+            DrawCard(
+                "Equipment & Shop",
+                () =>
+                {
+                    DrawCheckbox("Infinite Durability", v => state.InfiniteDurability = v, state.InfiniteDurability);
+                    guiHelper.AddSpace(8);
+                    DrawCheckbox("Infinite Gauge", v => state.InfiniteGauge = v, state.InfiniteGauge);
+                    guiHelper.AddSpace(8);
+                    DrawCheckbox("Infinite Currency", v => state.InfiniteCurrency = v, state.InfiniteCurrency);
+                    guiHelper.AddSpace(8);
+                    if (guiHelper.Button("Add 10k Currency", ControlVariant.Default, ControlSize.Small))
+                        AddCurrency(10000);
+                }
+            );
+
+            guiHelper.AddSpace(12);
+            DrawItemSpawner();
+            guiHelper.EndVerticalGroup();
         }
 
         void DrawVisualTab()
         {
-            try
-            {
-                guiHelper.BeginVerticalGroup(GUILayout.ExpandWidth(true));
+            guiHelper.BeginVerticalGroup(GUILayout.ExpandWidth(true));
 
-                guiHelper.BeginCard(width: -1, height: -1);
-                guiHelper.CardTitle("ESP Settings");
-                guiHelper.CardContent(() =>
+            DrawCard(
+                "ESP Settings",
+                () =>
                 {
-                    DrawToggleButton("Enable ESP", x => state.ESP = x, () => state.ESP);
-
+                    DrawCheckbox("Enable ESP", v => state.ESP = v, state.ESP, "ToggleESP");
                     if (state.ESP)
                     {
                         guiHelper.AddSpace(10);
-                        DrawFloatSlider("Distance", x => state.ESPDistance = x, () => state.ESPDistance, 50f, 500f, "m");
+                        DrawSlider("Distance", v => state.ESPDistance = v, state.ESPDistance, 50f, 500f, "m");
+                        guiHelper.AddSpace(12);
+
+                        guiHelper.BeginHorizontalGroup();
+
+                        guiHelper.BeginVerticalGroup(GUILayout.Width(150));
+                        DrawCheckbox("Players", v => state.ESPShowPlayers = v, state.ESPShowPlayers);
+                        DrawCheckbox("Monsters", v => state.ESPShowMonsters = v, state.ESPShowMonsters);
+                        DrawCheckbox("Loot", v => state.ESPShowLoot = v, state.ESPShowLoot);
+                        guiHelper.EndVerticalGroup();
+
+                        guiHelper.BeginVerticalGroup(GUILayout.Width(150));
+                        DrawCheckbox("Interactors", v => state.ESPShowInteractors = v, state.ESPShowInteractors);
+                        DrawCheckbox("NPCs", v => state.ESPShowNPCs = v, state.ESPShowNPCs);
+                        DrawCheckbox("Field Skills", v => state.ESPShowFieldSkills = v, state.ESPShowFieldSkills);
+                        guiHelper.EndVerticalGroup();
+
+                        guiHelper.EndHorizontalGroup();
                     }
-                });
-                guiHelper.EndCard();
+                }
+            );
 
-                guiHelper.AddSpace(12);
+            guiHelper.AddSpace(12);
 
-                guiHelper.BeginCard(width: -1, height: -1);
-                guiHelper.CardTitle("ESP Visibility");
-                guiHelper.CardContent(() =>
+            DrawCard(
+                "Lighting",
+                () =>
                 {
-                    guiHelper.BeginHorizontalGroup();
-
-                    guiHelper.BeginVerticalGroup(GUILayout.Width(150));
-                    DrawToggleButton("Players", x => state.ESPShowPlayers = x, () => state.ESPShowPlayers);
-                    DrawToggleButton("Monsters", x => state.ESPShowMonsters = x, () => state.ESPShowMonsters);
-                    DrawToggleButton("Loot", x => state.ESPShowLoot = x, () => state.ESPShowLoot);
-                    guiHelper.EndVerticalGroup();
-
-                    guiHelper.BeginVerticalGroup(GUILayout.Width(150));
-                    DrawToggleButton("Interactors", x => state.ESPShowInteractors = x, () => state.ESPShowInteractors);
-                    DrawToggleButton("NPCs", x => state.ESPShowNPCs = x, () => state.ESPShowNPCs);
-                    DrawToggleButton("Field Skills", x => state.ESPShowFieldSkills = x, () => state.ESPShowFieldSkills);
-                    guiHelper.EndVerticalGroup();
-
-                    guiHelper.BeginVerticalGroup(GUILayout.Width(150));
-                    DrawToggleButton("Projectiles", x => state.ESPShowProjectiles = x, () => state.ESPShowProjectiles);
-                    DrawToggleButton("Aura Skills", x => state.ESPShowAuraSkills = x, () => state.ESPShowAuraSkills);
-                    guiHelper.EndVerticalGroup();
-
-                    guiHelper.EndHorizontalGroup();
-                });
-                guiHelper.EndCard();
-
-                guiHelper.AddSpace(12);
-
-                guiHelper.BeginCard(width: -1, height: -1);
-                guiHelper.CardTitle("Lighting");
-                guiHelper.CardContent(() =>
-                {
-                    DrawToggleButton(
+                    DrawCheckbox(
                         "Fullbright",
-                        x =>
+                        v =>
                         {
-                            state.Fullbright = x;
-                            fullbrightManager.SetEnabled(state.Fullbright);
+                            state.Fullbright = v;
+                            fullbrightManager.SetEnabled(v);
                         },
-                        () => state.Fullbright
+                        state.Fullbright,
+                        "ToggleFullbright"
                     );
-                });
-                guiHelper.EndCard();
+                }
+            );
 
-                guiHelper.EndVerticalGroup();
-            }
-            catch (Exception ex)
+            guiHelper.EndVerticalGroup();
+        }
+
+        private void DrawCard(string title, Action content)
+        {
+            guiHelper.BeginCard(width: -1, height: -1);
+            guiHelper.CardTitle(title);
+            guiHelper.CardContent(content);
+            guiHelper.EndCard();
+        }
+
+        private void DrawCheckbox(string label, Action<bool> onChange, bool value, string hotkeyId = null)
+        {
+            GUILayout.BeginHorizontal();
+            bool newValue = guiHelper.Toggle(label, value, ControlVariant.Default, ControlSize.Default, (v) => onChange(v), false);
+            if (!string.IsNullOrEmpty(hotkeyId))
             {
-                MelonLogger.Error($"DrawVisualTab error: {ex.Message}");
+                GUILayout.FlexibleSpace();
+                guiHelper.MutedLabel($"[{configManager.GetHotkey(hotkeyId)}]");
             }
+            GUILayout.EndHorizontal();
+        }
+
+        private void DrawSlider(string label, Action<float> onChange, float value, float min, float max, string suffix)
+        {
+            guiHelper.Label(label);
+            float newValue = guiHelper.Slider(value, min, max);
+            if (newValue != value)
+            {
+                onChange(newValue);
+            }
+            guiHelper.MutedLabel($"{newValue:F1}{suffix}");
+        }
+
+        private void DrawTeleportControls()
+        {
+            GUILayout.BeginHorizontal();
+            if (guiHelper.Button("Fwd 50m", ControlVariant.Secondary, ControlSize.Small))
+                movementManager.TeleportForward(50f);
+            if (guiHelper.Button("Fwd 100m", ControlVariant.Secondary, ControlSize.Small))
+                movementManager.TeleportForward(100f);
+            GUILayout.EndHorizontal();
+
+            guiHelper.AddSpace(8);
+
+            for (int i = 0; i < 3; i++)
+            {
+                int idx = i;
+                GUILayout.BeginHorizontal();
+                if (guiHelper.Button($"Save Pos {idx + 1}", ControlVariant.Default, ControlSize.Small))
+                    SavePosition(idx + 1);
+                if (guiHelper.Button($"Load Pos {idx + 1}", ControlVariant.Secondary, ControlSize.Small))
+                    LoadPosition(idx + 1);
+                GUILayout.EndHorizontal();
+                guiHelper.AddSpace(4);
+            }
+        }
+
+        private void DrawItemSpawner()
+        {
+            DrawCard(
+                "Item Spawner",
+                () =>
+                {
+                    GUILayout.BeginHorizontal();
+                    guiHelper.Label("ID:");
+                    guiHelper.Label(itemSpawnIDInput);
+                    if (guiHelper.Button("Spawn", ControlVariant.Default, ControlSize.Default))
+                    {
+                        if (int.TryParse(itemSpawnIDInput, out int id))
+                            ItemSpawnerPatches.SetItemToSpawn(id, 1);
+                    }
+                    GUILayout.EndHorizontal();
+
+                    guiHelper.AddSpace(12);
+
+                    if (guiHelper.Button(itemListLoaded ? "Refresh List" : "Load Items", ControlVariant.Secondary, ControlSize.Small))
+                    {
+                        LoadItemList();
+                    }
+
+                    if (itemListLoaded)
+                    {
+                        guiHelper.AddSpace(4);
+                        guiHelper.Label(itemSearchFilter);
+
+                        itemListScrollPosition = GUILayout.BeginScrollView(itemListScrollPosition, GUILayout.Height(200));
+                        var filtered = cachedItemList.Where(x => string.IsNullOrEmpty(itemSearchFilter) || x.name.IndexOf(itemSearchFilter, StringComparison.OrdinalIgnoreCase) >= 0).Take(100);
+
+                        foreach (var item in filtered)
+                        {
+                            if (guiHelper.Button($"{item.name} ({item.id})", ControlVariant.Secondary, ControlSize.Small))
+                            {
+                                itemSpawnIDInput = item.id.ToString();
+                            }
+                        }
+                        GUILayout.EndScrollView();
+                    }
+                }
+            );
+        }
+
+        private void DrawHotkeyButton(string label, string id)
+        {
+            GUILayout.BeginHorizontal();
+            guiHelper.Label(label);
+            GUILayout.FlexibleSpace();
+            string keyName = configManager.GetHotkey(id).ToString();
+            if (guiHelper.Button(keyName, ControlVariant.Secondary, ControlSize.Small))
+            {
+                activeHotkeyId = id;
+                isListeningForHotkey = true;
+            }
+            GUILayout.EndHorizontal();
+            guiHelper.AddSpace(4);
+        }
+
+        public FeatureState GetFeatureState() => state;
+
+        void OnDestroy()
+        {
+            fullbrightManager?.Cleanup();
+            ESPManager.Cleanup();
+            pickupManager?.Stop();
         }
 
         void DrawEntitiesTab()
         {
-            try
-            {
-                guiHelper.BeginVerticalGroup(GUILayout.ExpandWidth(true));
+            guiHelper.BeginVerticalGroup(GUILayout.ExpandWidth(true));
 
-                UpdatePlayerCache();
+            UpdatePlayerCache();
 
-                guiHelper.BeginHorizontalGroup();
+            guiHelper.BeginHorizontalGroup();
 
-                guiHelper.BeginVerticalGroup(GUILayout.Width(300));
-                guiHelper.BeginCard(width: 280, height: 600);
-                guiHelper.CardTitle("Entity List");
-
-                int totalCount = cachedPlayers.Length;
-                guiHelper.CardDescription($"Total: {totalCount}");
-
-                guiHelper.CardContent(() =>
+            guiHelper.BeginVerticalGroup(GUILayout.Width(300));
+            DrawCard(
+                "Entity List",
+                () =>
                 {
-                    ProtoActor[] displayPlayers = cachedPlayers;
+                    guiHelper.MutedLabel($"Total: {cachedPlayers.Length}");
+                    guiHelper.AddSpace(8);
 
-                    if (displayPlayers.Length == 0)
+                    if (cachedPlayers.Length == 0)
                     {
                         guiHelper.MutedLabel("No entities found");
                     }
                     else
                     {
-                        int maxDisplay = Mathf.Min(displayPlayers.Length, 15);
+                        int maxDisplay = Mathf.Min(cachedPlayers.Length, 15);
                         for (int i = 0; i < maxDisplay; i++)
-                            DrawActorListItem(displayPlayers[i]);
+                            DrawActorListItem(cachedPlayers[i]);
 
-                        if (displayPlayers.Length > maxDisplay)
-                            guiHelper.MutedLabel($"...and {displayPlayers.Length - maxDisplay} more");
+                        if (cachedPlayers.Length > maxDisplay)
+                            guiHelper.MutedLabel($"...and {cachedPlayers.Length - maxDisplay} more");
                     }
-                });
-                guiHelper.EndCard();
-                guiHelper.EndVerticalGroup();
+                }
+            );
+            guiHelper.EndVerticalGroup();
 
-                guiHelper.AddSpace(12);
+            guiHelper.AddSpace(12);
 
-                guiHelper.BeginVerticalGroup(GUILayout.ExpandWidth(true));
-                DrawEntityActionsPanel();
-                guiHelper.EndVerticalGroup();
+            guiHelper.BeginVerticalGroup(GUILayout.ExpandWidth(true));
+            DrawEntityActionsPanel();
+            guiHelper.EndVerticalGroup();
 
-                guiHelper.EndHorizontalGroup();
-                guiHelper.EndVerticalGroup();
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Error($"DrawEntitiesTab error: {ex.Message}");
-            }
+            guiHelper.EndHorizontalGroup();
+            guiHelper.EndVerticalGroup();
         }
 
         private void DrawEntityActionsPanel()
         {
-            try
-            {
-                ProtoActor localPlayer = PlayerAPI.GetLocalPlayer();
+            ProtoActor localPlayer = PlayerAPI.GetLocalPlayer();
 
-                guiHelper.BeginCard(width: -1, height: 600);
-                guiHelper.CardTitle("Entity Actions");
+            DrawCard(
+                "Entity Actions",
+                () =>
+                {
+                    if (selectedPlayer != null)
+                    {
+                        string actorType = selectedPlayer.ActorType == ActorType.Player ? "Player" : "Monster";
+                        guiHelper.MutedLabel($"Target: {selectedPlayer.nickName} ({actorType})");
+                    }
+                    else
+                    {
+                        guiHelper.MutedLabel("Select an entity to perform actions");
+                    }
 
-                if (selectedPlayer != null)
-                {
-                    string actorType = selectedPlayer.ActorType == ActorType.Player ? "Player" : "Monster";
-                    guiHelper.CardDescription($"Target: {selectedPlayer.nickName} ({actorType})");
-                }
-                else
-                {
-                    guiHelper.CardDescription("Select an entity to perform actions");
-                }
+                    guiHelper.AddSpace(8);
 
-                guiHelper.CardContent(() =>
-                {
                     if (selectedPlayer == null)
                     {
                         guiHelper.MutedLabel("No entity selected");
@@ -865,8 +711,6 @@ namespace Mimesis_Mod_Menu.Core
                     {
                         DrawActorInfo(selectedPlayer, localPlayer);
                         guiHelper.AddSpace(14);
-                        guiHelper.LabeledSeparator("Actions");
-                        guiHelper.AddSpace(8);
 
                         if (localPlayer != null)
                         {
@@ -893,71 +737,52 @@ namespace Mimesis_Mod_Menu.Core
                             }
                         }
                     }
-                });
-                guiHelper.EndCard();
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Error($"DrawEntityActionsPanel error: {ex.Message}");
-            }
+                }
+            );
         }
 
         void DrawSettingsTab()
         {
-            try
-            {
-                guiHelper.BeginVerticalGroup(GUILayout.ExpandWidth(true));
+            guiHelper.BeginVerticalGroup(GUILayout.ExpandWidth(true));
 
-                guiHelper.BeginCard(width: -1, height: -1);
-                guiHelper.CardTitle("Hotkey Configuration");
-                guiHelper.CardDescription("Click any hotkey to edit");
-                guiHelper.CardContent(() =>
+            DrawCard(
+                "Hotkeys",
+                () =>
                 {
-                    var hotkeys = configManager.GetAllHotkeys();
-
-                    foreach (var kvp in hotkeys.OrderBy(x => x.Key))
+                    if (isListeningForHotkey)
                     {
-                        string displayName = System.Text.RegularExpressions.Regex.Replace(kvp.Key, "([a-z])([A-Z])", "$1 $2");
-
-                        guiHelper.BeginHorizontalGroup();
-                        guiHelper.Label($"{displayName}:", ControlVariant.Default);
-
-                        if (isListeningForHotkey && editingHotkey == kvp.Key)
+                        guiHelper.Label($"Press any key to bind {activeHotkeyId}...");
+                        if (guiHelper.Button("Cancel", ControlVariant.Secondary, ControlSize.Small))
                         {
-                            guiHelper.DestructiveLabel("Press any key (ESC to cancel)");
+                            isListeningForHotkey = false;
+                            activeHotkeyId = "";
                         }
-                        else
-                        {
-                            var currentHotkey = configManager.GetHotkey(kvp.Key);
-                            if (guiHelper.Button(currentHotkey.ToString() ?? "None", ControlVariant.Secondary, ControlSize.Small))
-                            {
-                                editingHotkey = kvp.Key;
-                                isListeningForHotkey = true;
-                                pendingKey = KeyCode.None;
-                            }
-                        }
-                        guiHelper.EndHorizontalGroup();
-                        guiHelper.AddSpace(4);
                     }
-
-                    if (pendingKey != KeyCode.None && !isListeningForHotkey && !string.IsNullOrEmpty(editingHotkey))
+                    else
                     {
-                        var newHotkey = new HotkeyConfig(pendingKey, pendingShift, pendingCtrl, pendingAlt);
-                        configManager.SetHotkey(editingHotkey, newHotkey);
-                        pendingKey = KeyCode.None;
-                        editingHotkey = "";
+                        DrawHotkeyButton("Toggle Menu", "ToggleMenu");
+                        DrawHotkeyButton("God Mode", "ToggleGodMode");
+                        DrawHotkeyButton("ESP", "ToggleESP");
+                        DrawHotkeyButton("Auto Loot", "ToggleAutoLoot");
+                        DrawHotkeyButton("Fullbright", "ToggleFullbright");
+                        DrawHotkeyButton("Speed Boost", "ToggleSpeedBoost");
+                        DrawHotkeyButton("Infinite Stamina", "ToggleInfiniteStamina");
+                        DrawHotkeyButton("No Fall Damage", "ToggleNoFallDamage");
                     }
-                });
-                guiHelper.EndCard();
+                }
+            );
 
-                guiHelper.AddSpace(12);
+            guiHelper.AddSpace(12);
 
-                guiHelper.BeginCard(width: -1, height: -1);
-                guiHelper.CardTitle("Configuration");
-                guiHelper.CardContent(() =>
+            DrawCard(
+                "Configuration",
+                () =>
                 {
                     if (guiHelper.Button("Save Configuration", ControlVariant.Default, ControlSize.Default))
+                    {
+                        MelonPreferences.Save();
                         MelonLogger.Msg("Configuration saved");
+                    }
 
                     guiHelper.AddSpace(6);
 
@@ -966,134 +791,70 @@ namespace Mimesis_Mod_Menu.Core
                         configManager.LoadAllConfigs();
                         MelonLogger.Msg("Configuration reloaded");
                     }
-                });
-                guiHelper.EndCard();
+                }
+            );
 
-                guiHelper.EndVerticalGroup();
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Error($"DrawSettingsTab error: {ex.Message}");
-            }
-        }
-
-        private void DrawToggleButton(string label, Action<bool> setter, Func<bool> getter)
-        {
-            bool isEnabled = getter();
-
-            if (guiHelper.Toggle(label, isEnabled, ControlVariant.Default, ControlSize.Default, (newValue) => setter(newValue), false))
-            {
-                // it will do it!
-            }
-        }
-
-        private void DrawFloatSlider(string label, Action<float> setter, Func<float> getter, float min, float max, string suffix)
-        {
-            float oldValue = getter();
-            guiHelper.BeginHorizontalGroup();
-            guiHelper.Label($"{label}: {oldValue:F1}{suffix}", ControlVariant.Default);
-            float newValue = GUILayout.HorizontalSlider(oldValue, min, max, GUILayout.ExpandWidth(true));
-            guiHelper.EndHorizontalGroup();
-
-            if (newValue != oldValue)
-            {
-                setter(newValue);
-            }
-        }
-
-        private void DrawTeleportButton(string label, float distance)
-        {
-            if (guiHelper.Button(label, ControlVariant.Default, ControlSize.Default))
-                movementManager.TeleportForward(distance);
+            guiHelper.EndVerticalGroup();
         }
 
         private void UpdatePlayerCache()
         {
-            try
-            {
-                if (Time.time - lastPlayerCacheTime < PLAYER_CACHE_INTERVAL)
-                    return;
+            if (Time.time - lastPlayerCacheTime < PLAYER_CACHE_INTERVAL)
+                return;
 
-                ProtoActor[] allActors = PlayerAPI.GetAllPlayers();
-                cachedPlayers = allActors.Where(p => p != null && !string.IsNullOrEmpty(p.nickName) && !p.dead).OrderBy(p => p.ActorType).ThenBy(p => p.nickName).ToArray();
-
-                lastPlayerCacheTime = Time.time;
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Error($"UpdatePlayerCache error: {ex.Message}");
-            }
+            ProtoActor[] allActors = PlayerAPI.GetAllPlayers();
+            cachedPlayers = allActors.Where(p => p != null && !string.IsNullOrEmpty(p.nickName) && !p.dead).OrderBy(p => p.ActorType).ThenBy(p => p.nickName).ToArray();
+            lastPlayerCacheTime = Time.time;
         }
 
         private void DrawActorListItem(ProtoActor actor)
         {
-            try
-            {
-                string label = actor.nickName;
-                ProtoActor localPlayer = PlayerAPI.GetLocalPlayer();
-                string typeLabel = actor.ActorType == ActorType.Player ? "[P]" : "[M]";
+            string label = actor.nickName;
+            ProtoActor localPlayer = PlayerAPI.GetLocalPlayer();
+            string typeLabel = actor.ActorType == ActorType.Player ? "[P]" : "[M]";
 
-                if (localPlayer != null && actor.ActorID == localPlayer.ActorID)
-                    label += " [YOU]";
+            if (localPlayer != null && actor.ActorID == localPlayer.ActorID)
+                label += " [YOU]";
 
-                label = $"{typeLabel} {label}";
+            label = $"{typeLabel} {label}";
 
-                bool isSelected = selectedPlayer != null && selectedPlayer.ActorID == actor.ActorID;
-                ControlVariant variant = isSelected ? ControlVariant.Secondary : ControlVariant.Ghost;
+            bool isSelected = selectedPlayer != null && selectedPlayer.ActorID == actor.ActorID;
+            ControlVariant variant = isSelected ? ControlVariant.Secondary : ControlVariant.Ghost;
 
-                if (guiHelper.Button(label, variant, ControlSize.Small))
-                    selectedPlayer = actor;
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Error($"DrawActorListItem error: {ex.Message}");
-            }
+            if (guiHelper.Button(label, variant, ControlSize.Small))
+                selectedPlayer = actor;
         }
 
         private void DrawActorInfo(ProtoActor selectedTarget, ProtoActor localPlayer)
         {
-            try
-            {
-                if (selectedTarget == null)
-                    return;
+            if (selectedTarget == null)
+                return;
 
-                guiHelper.Label($"Name: {selectedTarget.nickName}", ControlVariant.Default);
-                guiHelper.Label($"Type: {(selectedTarget.ActorType == ActorType.Player ? "Player" : "Monster")}", ControlVariant.Default);
-                guiHelper.Label($"Actor ID: {selectedTarget.ActorID}", ControlVariant.Default);
+            guiHelper.MutedLabel($"Name: {selectedTarget.nickName}");
+            guiHelper.MutedLabel($"Type: {(selectedTarget.ActorType == ActorType.Player ? "Player" : "Monster")}");
+            guiHelper.MutedLabel($"Actor ID: {selectedTarget.ActorID}");
 
-                if (localPlayer != null && selectedTarget.ActorID != localPlayer.ActorID)
-                {
-                    float distance = Vector3.Distance(selectedTarget.transform.position, localPlayer.transform.position);
-                    guiHelper.Label($"Distance: {distance:F1}m", ControlVariant.Default);
-                }
-            }
-            catch (Exception ex)
+            if (localPlayer != null && selectedTarget.ActorID != localPlayer.ActorID)
             {
-                MelonLogger.Error($"DrawActorInfo error: {ex.Message}");
+                float distance = Vector3.Distance(selectedTarget.transform.position, localPlayer.transform.position);
+                guiHelper.MutedLabel($"Distance: {distance:F1}m");
             }
         }
 
         private void KillActor(ProtoActor target)
         {
-            try
-            {
-                if (target == null)
-                    return;
+            if (target == null)
+                return;
 
-                target.OnActorDeath(
-                    new ProtoActor.ActorDeathInfo
-                    {
-                        DeadActorID = target.ActorID,
-                        ReasonOfDeath = ReasonOfDeath.None,
-                        AttackerActorID = 0,
-                        LinkedMasterID = 0,
-                    }
-                );
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Error($"KillActor error: {ex.Message}");
-            }
+            target.OnActorDeath(
+                new ProtoActor.ActorDeathInfo
+                {
+                    DeadActorID = target.ActorID,
+                    ReasonOfDeath = ReasonOfDeath.None,
+                    AttackerActorID = 0,
+                    LinkedMasterID = 0,
+                }
+            );
         }
 
         private void AddCurrency(int amount)
@@ -1190,15 +951,10 @@ namespace Mimesis_Mod_Menu.Core
                                     var locData = localizationDict[nameKey];
                                     if (locData != null)
                                     {
-                                        var koField = ReflectionHelper.GetFieldValue(locData, "ko");
                                         var enField = ReflectionHelper.GetFieldValue(locData, "en");
-
-                                        string koText = koField?.ToString();
                                         string enText = enField?.ToString();
 
-                                        if (!string.IsNullOrEmpty(koText))
-                                            displayName = koText;
-                                        else if (!string.IsNullOrEmpty(enText))
+                                        if (!string.IsNullOrEmpty(enText))
                                             displayName = enText;
                                         else
                                             displayName = nameKey;
@@ -1435,7 +1191,6 @@ namespace Mimesis_Mod_Menu.Core
                 localPlayer.transform.position = pos;
                 if (cc != null)
                     cc.enabled = true;
-
             }
             catch (Exception ex)
             {
