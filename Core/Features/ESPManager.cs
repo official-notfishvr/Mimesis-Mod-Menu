@@ -150,7 +150,7 @@ namespace Mimesis_Mod_Menu.Core.Features
 
                 foreach (ProtoActor actor in allActors)
                 {
-                    if (actor == null || !actor.gameObject.activeInHierarchy)
+                    if (actor == null || !actor.gameObject.activeInHierarchy || actor.dead)
                         continue;
 
                     if (actor.ActorType == ActorType.None || actor.ActorType == ActorType.System)
@@ -205,7 +205,7 @@ namespace Mimesis_Mod_Menu.Core.Features
             {
                 foreach (ProtoActor actor in cachedActors)
                 {
-                    if (actor == null || !actor.gameObject.activeInHierarchy)
+                    if (actor == null || !actor.gameObject.activeInHierarchy || actor.dead)
                         continue;
 
                     if (!ShouldShowActorType(actor.ActorType))
