@@ -263,7 +263,7 @@ namespace Mimesis_Mod_Menu.Core
         {
             try
             {
-                return AccessTools.Constructor(typeof(EquipmentItemElement), new Type[] { typeof(int), typeof(long), typeof(bool), typeof(int), typeof(int), typeof(int), typeof(InventoryController) });
+                return AccessTools.Constructor(typeof(EquipmentItemElement), new Type[] { typeof(int), typeof(long), typeof(bool), typeof(int), typeof(int), typeof(int), typeof(int), typeof(InventoryController) });
             }
             catch (Exception ex)
             {
@@ -482,7 +482,7 @@ namespace Mimesis_Mod_Menu.Core
             }
         }
 
-        private static void Postfix(MaintenanceRoom __instance, int itemMasterID, PosWithRot pos, ref MsgErrorCode __result)
+        private static void Postfix(MaintenanceRoom __instance, int itemMasterID, ref MsgErrorCode __result)
         {
             try
             {
