@@ -4,7 +4,7 @@
     "website_url": "https://github.com/official-notfishvr/Mimesis-Mod-Menu",
     "description": "a mod menu.",
     "dependencies": [
-        "LavaGang-MelonLoader-0.7.1",
-        "NeoMimicry-MimicAPI-0.1.2"
-    ]
+      "LavaGang-MelonLoader-0.7.3",
+      "NeoMimicry-MimicAPI-0.3.0"
+  ]
 }
