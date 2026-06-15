@@ -20,12 +20,11 @@ namespace Mimesis_Mod_Menu.Core
 {
     public class MainGUI : MonoBehaviour
     {
-        private GUIHelper guiHelper;
+        private GUIHelper gui;
         private ConfigManager configManager;
         private Rect windowRect = new Rect(20, 20, 1000, 800);
-        private Vector2 scrollPosition;
-        private int currentTab;
-        private TabConfig[] tabs;
+        private Vector2 scrollPos;
+        private int activeTab;
 
         private PickupManager pickupManager;
         private MovementManager movementManager;
@@ -33,23 +32,23 @@ namespace Mimesis_Mod_Menu.Core
         private FullbrightManager fullbrightManager;
         private ItemSpawnerManager itemSpawnerManager;
 
-        private bool isListeningForHotkey = false;
+        private bool listeningForHotkey;
         private string activeHotkeyId = "";
 
         private string itemSpawnIDInput = "1001";
         private string itemSearchFilter = "";
-        private Vector2 itemListScrollPosition;
-        private List<(int id, string name)> cachedItemList = new List<(int, string)>();
-        private bool itemListLoaded = false;
+        private Vector2 itemListScroll;
+        private List<(int id, string name)> cachedItems = new List<(int, string)>();
+        private bool itemsLoaded;
 
         private bool showMenu = true;
-        private float lastMenuToggleTime;
-        private const float HOTKEY_COOLDOWN = 0.2f;
+        private float lastToggleTime;
+        private const float TOGGLE_COOLDOWN = 0.2f;
 
         private ProtoActor[] cachedPlayers = new ProtoActor[0];
-        private ProtoActor selectedPlayer;
-        private float lastPlayerCacheTime;
-        private const float PLAYER_CACHE_INTERVAL = 1f;
+        private ProtoActor selectedActor;
+        private float lastPlayerRefresh;
+        private const float PLAYER_REFRESH_RATE = 1f;
 
         public class FeatureState
         {
@@ -74,16 +73,15 @@ namespace Mimesis_Mod_Menu.Core
             public bool InfiniteDurability;
             public bool InfinitePrice;
             public bool InfiniteGauge;
+            public bool InfiniteCurrency;
             public bool ForceBuy;
             public bool ForceRepair;
-            public bool InfiniteCurrency;
             public bool Fly;
             public float FlySpeed = 10f;
             public bool DamageMultiplier;
             public float DamageMultiplierValue = 10f;
             public bool CustomScale;
             public float PlayerScale = 1f;
-            public Vector3[] SavedPositions = new Vector3[3];
             public Vector3 SavedPosition1;
             public Vector3 SavedPosition2;
             public Vector3 SavedPosition3;
@@ -93,27 +91,21 @@ namespace Mimesis_Mod_Menu.Core
 
         void Start()
         {
-            guiHelper = new GUIHelper();
+            gui = new GUIHelper();
             configManager = new ConfigManager();
-
             autoLootManager = new AutoLootManager();
             fullbrightManager = new FullbrightManager();
             pickupManager = new PickupManager();
             movementManager = new MovementManager();
             itemSpawnerManager = new ItemSpawnerManager();
 
-            tabs = new TabConfig[] { new TabConfig("Player", DrawPlayerTab), new TabConfig("Combat", DrawCombatTab), new TabConfig("Loot", DrawLootTab), new TabConfig("Visual", DrawVisualTab), new TabConfig("Entities", DrawEntitiesTab), new TabConfig("Settings", DrawSettingsTab) };
-
             if (configManager.GetHotkey("ToggleMenu").Key == KeyCode.None)
-            {
                 configManager.SetHotkey("ToggleMenu", new HotkeyConfig(KeyCode.Insert, false, false, false));
-            }
 
             ESPManager.Initialize();
             Patches.ApplyPatches(configManager);
 
-            bool enabled = configManager.GetValue<bool>("Enabled", true);
-            if (!enabled)
+            if (!configManager.GetValue<bool>("Enabled", true))
                 showMenu = false;
 
             MelonLogger.Msg("Mimesis Mod Menu initialized");
@@ -129,61 +121,47 @@ namespace Mimesis_Mod_Menu.Core
             pickupManager?.Update();
             movementManager?.Update();
             itemSpawnerManager?.Update();
+
             if (!configManager.GetValue<bool>("Enabled", true))
                 return;
 
-            HandleInput();
-        }
-
-        private void HandleInput()
-        {
-            if (isListeningForHotkey)
+            if (listeningForHotkey)
                 return;
 
-            if (CheckHotkey("ToggleMenu") && Time.time - lastMenuToggleTime > HOTKEY_COOLDOWN)
+            if (configManager.GetHotkey("ToggleMenu").IsPressed() && Time.time - lastToggleTime > TOGGLE_COOLDOWN)
             {
                 showMenu = !showMenu;
-                lastMenuToggleTime = Time.time;
+                lastToggleTime = Time.time;
             }
 
             if (!showMenu && !configManager.GetValue<bool>("BackgroundInput", true))
                 return;
 
-            if (CheckHotkey("ToggleGodMode"))
-                ToggleBool(v => state.GodMode = v, state.GodMode);
-            if (CheckHotkey("ToggleInfiniteStamina"))
-                ToggleBool(v => state.InfiniteStamina = v, state.InfiniteStamina);
-            if (CheckHotkey("ToggleNoFallDamage"))
-                ToggleBool(v => state.NoFallDamage = v, state.NoFallDamage);
-            if (CheckHotkey("ToggleSpeedBoost"))
-                ToggleBool(v => state.SpeedBoost = v, state.SpeedBoost);
-            if (CheckHotkey("ToggleESP"))
-                ToggleBool(v => state.ESP = v, state.ESP);
+            if (configManager.GetHotkey("ToggleGodMode").IsPressed())
+                state.GodMode = !state.GodMode;
+            if (configManager.GetHotkey("ToggleInfiniteStamina").IsPressed())
+                state.InfiniteStamina = !state.InfiniteStamina;
+            if (configManager.GetHotkey("ToggleNoFallDamage").IsPressed())
+                state.NoFallDamage = !state.NoFallDamage;
+            if (configManager.GetHotkey("ToggleSpeedBoost").IsPressed())
+                state.SpeedBoost = !state.SpeedBoost;
+            if (configManager.GetHotkey("ToggleESP").IsPressed())
+                state.ESP = !state.ESP;
 
-            if (CheckHotkey("ToggleAutoLoot"))
+            if (configManager.GetHotkey("ToggleAutoLoot").IsPressed())
             {
                 state.AutoLoot = !state.AutoLoot;
                 autoLootManager.SetEnabled(state.AutoLoot);
             }
 
-            if (CheckHotkey("ToggleFullbright"))
+            if (configManager.GetHotkey("ToggleFullbright").IsPressed())
             {
                 state.Fullbright = !state.Fullbright;
                 fullbrightManager.SetEnabled(state.Fullbright);
             }
 
             if (state.Fly)
-                UpdateFly();
-        }
-
-        private bool CheckHotkey(string name)
-        {
-            return configManager.GetHotkey(name).IsPressed();
-        }
-
-        private void ToggleBool(Action<bool> setter, bool currentValue)
-        {
-            setter(!currentValue);
+                RunFly();
         }
 
         void OnGUI()
@@ -194,448 +172,664 @@ namespace Mimesis_Mod_Menu.Core
             GUI.skin.horizontalScrollbar = GUIStyle.none;
             GUI.skin.verticalScrollbar = GUIStyle.none;
 
-            if (isListeningForHotkey)
+            if (listeningForHotkey)
             {
-                HandleHotkeyBindingEvent();
+                Event e = Event.current;
+                if (e.type == EventType.KeyDown && e.keyCode != KeyCode.None && e.keyCode != KeyCode.Escape)
+                    configManager.SetHotkey(activeHotkeyId, new HotkeyConfig(e.keyCode, e.shift, e.control, e.alt));
+
+                if (e.type == EventType.KeyDown)
+                {
+                    listeningForHotkey = false;
+                    activeHotkeyId = "";
+                }
             }
 
             if (showMenu)
-            {
-                windowRect = GUI.Window(101, windowRect, DrawWindow, "Mimesis Mod Menu");
-            }
+                windowRect = GUI.Window(101, windowRect, RenderWindow, "Mimesis Mod Menu");
 
             ESPManager.UpdateESP();
-            guiHelper.DrawOverlay();
+            gui.DrawOverlay();
         }
 
-        private void HandleHotkeyBindingEvent()
+        void RenderWindow(int id)
         {
-            Event e = Event.current;
-            if (e.type == EventType.KeyDown)
-            {
-                if (e.keyCode != KeyCode.None && e.keyCode != KeyCode.Escape)
-                {
-                    configManager.SetHotkey(activeHotkeyId, new HotkeyConfig(e.keyCode, e.shift, e.control, e.alt));
-                }
-                isListeningForHotkey = false;
-                activeHotkeyId = "";
-            }
-        }
+            gui.UpdateGUI(showMenu);
 
-        void DrawWindow(int windowID)
-        {
-            guiHelper.UpdateGUI(showMenu);
-
-            if (!guiHelper.BeginGUI())
+            if (!gui.BeginGUI())
             {
                 GUI.DragWindow();
                 return;
             }
 
-            currentTab = guiHelper.Tabs()
-                .Items(tabs.Select(t => t.Name).ToArray())
-                .SelectedIndex(currentTab)
-                .Content(DrawActiveTab)
-                .MaxLines(1)
+            string[] tabNames = { "Player", "Combat", "Loot", "Visual", "Entities", "Settings" };
+
+            activeTab = gui.Tabs()
+                .Items(tabNames)
+                .SelectedIndex(activeTab)
                 .Side(TabSide.Left)
+                .MaxLines(1)
+                .Content(() =>
+                {
+                    scrollPos = gui.ScrollView(
+                        scrollPos,
+                        () =>
+                        {
+                            gui.BeginVerticalGroup(GUILayout.ExpandHeight(true));
+
+                            switch (activeTab)
+                            {
+                                case 0:
+                                    RenderPlayerTab();
+                                    break;
+                                case 1:
+                                    RenderCombatTab();
+                                    break;
+                                case 2:
+                                    RenderLootTab();
+                                    break;
+                                case 3:
+                                    RenderVisualTab();
+                                    break;
+                                case 4:
+                                    RenderEntitiesTab();
+                                    break;
+                                case 5:
+                                    RenderSettingsTab();
+                                    break;
+                            }
+
+                            gui.EndVerticalGroup();
+                        },
+                        GUILayout.Height(700)
+                    );
+                })
                 .Render();
 
-            guiHelper.EndGUI();
+            gui.EndGUI();
             GUI.DragWindow();
         }
 
-        void DrawActiveTab()
+        void RenderPlayerTab()
         {
-            scrollPosition = guiHelper.ScrollView(
-                scrollPosition,
-                () =>
+            gui.BeginVerticalGroup(GUILayout.ExpandWidth(true));
+
+            gui.Card()
+                .Title("Defense")
+                .Header(() =>
                 {
-                    guiHelper.BeginVerticalGroup(GUILayout.ExpandHeight(true));
-                    tabs[currentTab].Content.Invoke();
-                    guiHelper.EndVerticalGroup();
-                },
-                GUILayout.Height(700)
-            );
-        }
+                    state.GodMode = gui.Switch("God Mode", state.GodMode).OnChange(v => state.GodMode = v).FullRowClick().Render();
 
-        void DrawPlayerTab()
-        {
-            guiHelper.BeginVerticalGroup(GUILayout.ExpandWidth(true));
+                    gui.Space(8);
 
-            DrawCard(
-                "Defense",
-                () =>
+                    state.NoFallDamage = gui.Switch("No Fall Damage", state.NoFallDamage).OnChange(v => state.NoFallDamage = v).FullRowClick().Render();
+
+                    gui.Space(8);
+
+                    state.InfiniteStamina = gui.Switch("Infinite Stamina", state.InfiniteStamina).OnChange(v => state.InfiniteStamina = v).FullRowClick().Render();
+                })
+                .Render();
+
+            gui.Space(12);
+
+            gui.Card()
+                .Title("Movement")
+                .Header(() =>
                 {
-                    DrawCheckbox("God Mode", v => state.GodMode = v, state.GodMode, "ToggleGodMode");
-                    guiHelper.AddSpace(8);
-                    DrawCheckbox("No Fall Damage", v => state.NoFallDamage = v, state.NoFallDamage, "ToggleNoFallDamage");
-                    guiHelper.AddSpace(8);
-                    DrawCheckbox("Infinite Stamina", v => state.InfiniteStamina = v, state.InfiniteStamina, "ToggleInfiniteStamina");
-                }
-            );
+                    state.SpeedBoost = gui.Switch("Speed Boost", state.SpeedBoost).OnChange(v => state.SpeedBoost = v).FullRowClick().Render();
 
-            guiHelper.AddSpace(12);
-
-            DrawCard(
-                "Movement",
-                () =>
-                {
-                    DrawCheckbox("Speed Boost", v => state.SpeedBoost = v, state.SpeedBoost, "ToggleSpeedBoost");
                     if (state.SpeedBoost)
                     {
-                        guiHelper.AddSpace(8);
-                        DrawSlider("Multiplier", v => state.SpeedMultiplier = v, state.SpeedMultiplier, 1f, 5f, "x");
+                        gui.Space(8);
+                        gui.Label("Speed Multiplier").Muted().Render();
+                        state.SpeedMultiplier = gui.Slider(state.SpeedMultiplier).Range(1f, 5f).ShowValue(true).Format("x{0:F1}").OnChange(v => state.SpeedMultiplier = v).Render();
                     }
 
-                    guiHelper.AddSpace(10);
+                    gui.Space(10);
 
-                    DrawCheckbox(
-                        "Fly",
-                        v =>
+                    state.Fly = gui.Switch("Fly", state.Fly)
+                        .OnChange(v =>
                         {
                             state.Fly = v;
                             if (v)
                                 EnableFly();
                             else
                                 DisableFly();
-                        },
-                        state.Fly
-                    );
+                        })
+                        .FullRowClick()
+                        .Render();
 
                     if (state.Fly)
                     {
-                        guiHelper.AddSpace(8);
-                        DrawSlider("Fly Speed", v => state.FlySpeed = v, state.FlySpeed, 5f, 50f, "m/s");
+                        gui.Space(8);
+                        gui.Label("Fly Speed").Muted().Render();
+                        state.FlySpeed = gui.Slider(state.FlySpeed).Range(5f, 50f).ShowValue(true).Format("{0:F1} m/s").OnChange(v => state.FlySpeed = v).Render();
                     }
 
-                    guiHelper.AddSpace(10);
-                    DrawTeleportControls();
-                }
-            );
+                    gui.Space(10);
+                    gui.Separator().Decorative().Render();
+                    gui.Space(8);
 
-            guiHelper.AddSpace(12);
+                    gui.Row(() =>
+                    {
+                        if (gui.Button("Fwd 50m").Secondary().Small().Render())
+                            movementManager.TeleportForward(50f);
 
-            DrawCard(
-                "Appearance",
-                () =>
+                        gui.Space(6);
+
+                        if (gui.Button("Fwd 100m").Secondary().Small().Render())
+                            movementManager.TeleportForward(100f);
+                    });
+
+                    gui.Space(8);
+
+                    for (int i = 0; i < 3; i++)
+                    {
+                        int slot = i + 1;
+                        gui.Row(() =>
+                        {
+                            if (gui.Button($"Save Pos {slot}").Default().Small().Render())
+                                SavePosition(slot);
+                            gui.Space(6);
+                            if (gui.Button($"Load Pos {slot}").Secondary().Small().Render())
+                                LoadPosition(slot);
+                        });
+                        gui.Space(4);
+                    }
+                })
+                .Render();
+
+            gui.Space(12);
+
+            gui.Card()
+                .Title("Appearance")
+                .Header(() =>
                 {
-                    DrawCheckbox(
-                        "Custom Scale",
-                        v =>
+                    state.CustomScale = gui.Switch("Custom Scale", state.CustomScale)
+                        .OnChange(v =>
                         {
                             state.CustomScale = v;
                             ApplyPlayerScale();
-                        },
-                        state.CustomScale
-                    );
+                        })
+                        .FullRowClick()
+                        .Render();
+
                     if (state.CustomScale)
                     {
-                        guiHelper.AddSpace(8);
-                        DrawSlider(
-                            "Scale",
-                            v =>
+                        gui.Space(8);
+                        gui.Label("Player Scale").Muted().Render();
+                        state.PlayerScale = gui.Slider(state.PlayerScale)
+                            .Range(0.1f, 5f)
+                            .ShowValue(true)
+                            .Format("{0:F2}x")
+                            .OnChange(v =>
                             {
                                 state.PlayerScale = v;
                                 ApplyPlayerScale();
-                            },
-                            state.PlayerScale,
-                            0.1f,
-                            5f,
-                            "x"
-                        );
+                            })
+                            .Render();
                     }
-                }
-            );
+                })
+                .Render();
 
-            guiHelper.EndVerticalGroup();
+            gui.EndVerticalGroup();
         }
 
-        void DrawCombatTab()
+        void RenderCombatTab()
         {
-            guiHelper.BeginVerticalGroup(GUILayout.ExpandWidth(true));
+            gui.BeginVerticalGroup(GUILayout.ExpandWidth(true));
 
-            DrawCard(
-                "Damage",
-                () =>
+            gui.Card()
+                .Title("Damage")
+                .Header(() =>
                 {
-                    DrawCheckbox("Damage Multiplier", v => state.DamageMultiplier = v, state.DamageMultiplier);
+                    state.DamageMultiplier = gui.Switch("Damage Multiplier", state.DamageMultiplier).OnChange(v => state.DamageMultiplier = v).FullRowClick().Render();
+
                     if (state.DamageMultiplier)
                     {
-                        guiHelper.AddSpace(8);
-                        DrawSlider("Multiplier", v => state.DamageMultiplierValue = v, state.DamageMultiplierValue, 1f, 100f, "x");
+                        gui.Space(8);
+                        gui.Label("Multiplier").Muted().Render();
+                        state.DamageMultiplierValue = gui.Slider(state.DamageMultiplierValue).Range(1f, 100f).ShowValue(true).Format("{0:F0}x").OnChange(v => state.DamageMultiplierValue = v).Render();
                     }
-                }
-            );
+                })
+                .Render();
 
-            guiHelper.AddSpace(12);
+            gui.Space(12);
 
-            DrawCard(
-                "Bulk Actions",
-                () =>
+            gui.Card()
+                .Title("Bulk Actions")
+                .Header(() =>
                 {
-                    if (guiHelper.Button("Kill All Players", ControlVariant.Destructive, ControlSize.Default))
+                    if (gui.Button("Kill All Players").Destructive().Render())
                         KillAllActors(ActorType.Player);
 
-                    guiHelper.AddSpace(10);
+                    gui.Space(10);
 
-                    if (guiHelper.Button("Kill All Monsters", ControlVariant.Destructive, ControlSize.Default))
+                    if (gui.Button("Kill All Monsters").Destructive().Render())
                         KillAllActors(ActorType.Monster);
 
-                    guiHelper.AddSpace(10);
+                    gui.Space(10);
 
-                    if (guiHelper.Button("Clear All Monsters", ControlVariant.Destructive, ControlSize.Default))
+                    if (gui.Button("Clear All Monsters").Destructive().Render())
                         ClearAllMonsters();
-                }
-            );
+                })
+                .Render();
 
-            guiHelper.EndVerticalGroup();
+            gui.EndVerticalGroup();
         }
 
-        void DrawLootTab()
+        void RenderLootTab()
         {
-            guiHelper.BeginVerticalGroup(GUILayout.ExpandWidth(true));
+            gui.BeginVerticalGroup(GUILayout.ExpandWidth(true));
 
-            DrawCard(
-                "Item Collection",
-                () =>
+            gui.Card()
+                .Title("Item Collection")
+                .Header(() =>
                 {
-                    bool isActive = pickupManager.isActive;
-                    if (guiHelper.Button(isActive ? "Stop Picking Up" : "Pickup All Items", isActive ? ControlVariant.Destructive : ControlVariant.Default, ControlSize.Default))
+                    bool active = pickupManager.isActive;
+                    if (gui.Button(active ? "Stop Picking Up" : "Pickup All Items").Variant(active ? ControlVariant.Destructive : ControlVariant.Default).Render())
                     {
-                        if (isActive)
+                        if (active)
                             pickupManager.Stop();
                         else
                             pickupManager.StartPickupAll();
                     }
-                }
-            );
+                })
+                .Render();
 
-            guiHelper.AddSpace(12);
+            gui.Space(12);
 
-            DrawCard(
-                "Auto Loot",
-                () =>
+            gui.Card()
+                .Title("Auto Loot")
+                .Header(() =>
                 {
-                    DrawCheckbox(
-                        "Auto Loot Enabled",
-                        v =>
+                    state.AutoLoot = gui.Switch("Auto Loot", state.AutoLoot)
+                        .OnChange(v =>
                         {
                             state.AutoLoot = v;
                             autoLootManager.SetEnabled(v);
-                        },
-                        state.AutoLoot,
-                        "ToggleAutoLoot"
-                    );
+                        })
+                        .FullRowClick()
+                        .Render();
 
                     if (state.AutoLoot)
                     {
-                        guiHelper.AddSpace(8);
-                        DrawSlider(
-                            "Detection Range",
-                            v =>
+                        gui.Space(8);
+                        gui.Label("Detection Range").Muted().Render();
+                        state.AutoLootDistance = gui.Slider(state.AutoLootDistance)
+                            .Range(10f, 200f)
+                            .ShowValue(true)
+                            .Format("{0:F0}m")
+                            .OnChange(v =>
                             {
                                 state.AutoLootDistance = v;
                                 autoLootManager.SetDistance(v);
+                            })
+                            .Render();
+                    }
+                })
+                .Render();
+
+            gui.Space(12);
+
+            gui.Card()
+                .Title("Equipment & Shop")
+                .Header(() =>
+                {
+                    state.InfiniteDurability = gui.Switch("Infinite Durability", state.InfiniteDurability).OnChange(v => state.InfiniteDurability = v).FullRowClick().Render();
+
+                    gui.Space(8);
+
+                    state.InfinitePrice = gui.Switch("Infinite Price", state.InfinitePrice).OnChange(v => state.InfinitePrice = v).FullRowClick().Render();
+
+                    gui.Space(8);
+
+                    state.InfiniteGauge = gui.Switch("Infinite Gauge", state.InfiniteGauge).OnChange(v => state.InfiniteGauge = v).FullRowClick().Render();
+
+                    gui.Space(8);
+
+                    state.InfiniteCurrency = gui.Switch("Infinite Currency", state.InfiniteCurrency).OnChange(v => state.InfiniteCurrency = v).FullRowClick().Render();
+
+                    gui.Space(8);
+
+                    state.ForceBuy = gui.Switch("Force Buy", state.ForceBuy).OnChange(v => state.ForceBuy = v).FullRowClick().Render();
+
+                    gui.Space(8);
+
+                    state.ForceRepair = gui.Switch("Force Repair", state.ForceRepair).OnChange(v => state.ForceRepair = v).FullRowClick().Render();
+
+                    gui.Space(8);
+
+                    if (gui.Button("Add 10k Currency").Default().Small().Render())
+                        AddCurrency(10000);
+                })
+                .Render();
+
+            gui.Space(12);
+
+            gui.Card()
+                .Title("Item Spawner")
+                .Header(() =>
+                {
+                    gui.Row(() =>
+                    {
+                        gui.Label("Item ID:").Render();
+                        gui.Space(6);
+                        itemSpawnIDInput = gui.Input(itemSpawnIDInput).Placeholder("e.g. 1001").OnChange(v => itemSpawnIDInput = v).Render();
+                        gui.Space(6);
+                        if (gui.Button("Spawn").Default().Render())
+                        {
+                            if (int.TryParse(itemSpawnIDInput, out int spawnId))
+                                ItemSpawnerPatches.SetItemToSpawn(spawnId, 1);
+                        }
+                    });
+
+                    gui.Space(12);
+
+                    if (gui.Button(itemsLoaded ? "Refresh List" : "Load Items").Secondary().Small().Render())
+                        LoadItemList();
+
+                    if (itemsLoaded)
+                    {
+                        gui.Space(6);
+                        itemSearchFilter = gui.Input(itemSearchFilter).Placeholder("Search items...").OnChange(v => itemSearchFilter = v).Render();
+
+                        gui.Space(4);
+
+                        itemListScroll = gui.ScrollView(
+                            itemListScroll,
+                            () =>
+                            {
+                                var filtered = cachedItems.Where(x => string.IsNullOrEmpty(itemSearchFilter) || x.name.IndexOf(itemSearchFilter, StringComparison.OrdinalIgnoreCase) >= 0).Take(100);
+
+                                foreach (var item in filtered)
+                                {
+                                    if (gui.Button($"{item.name} ({item.id})").Secondary().Small().Render())
+                                        itemSpawnIDInput = item.id.ToString();
+                                }
                             },
-                            state.AutoLootDistance,
-                            10f,
-                            200f,
-                            "m"
+                            GUILayout.Height(200)
                         );
                     }
-                }
-            );
+                })
+                .Render();
 
-            guiHelper.AddSpace(12);
-
-            DrawCard(
-                "Equipment & Shop",
-                () =>
-                {
-                    DrawCheckbox("Infinite Durability", v => state.InfiniteDurability = v, state.InfiniteDurability);
-                    guiHelper.AddSpace(8);
-                    DrawCheckbox("Infinite Gauge", v => state.InfiniteGauge = v, state.InfiniteGauge);
-                    guiHelper.AddSpace(8);
-                    DrawCheckbox("Infinite Currency", v => state.InfiniteCurrency = v, state.InfiniteCurrency);
-                    guiHelper.AddSpace(8);
-                    if (guiHelper.Button("Add 10k Currency", ControlVariant.Default, ControlSize.Small))
-                        AddCurrency(10000);
-                }
-            );
-
-            guiHelper.AddSpace(12);
-            DrawItemSpawner();
-            guiHelper.EndVerticalGroup();
+            gui.EndVerticalGroup();
         }
 
-        void DrawVisualTab()
+        void RenderVisualTab()
         {
-            guiHelper.BeginVerticalGroup(GUILayout.ExpandWidth(true));
+            gui.BeginVerticalGroup(GUILayout.ExpandWidth(true));
 
-            DrawCard(
-                "ESP Settings",
-                () =>
+            gui.Card()
+                .Title("ESP Settings")
+                .Header(() =>
                 {
-                    DrawCheckbox("Enable ESP", v => state.ESP = v, state.ESP, "ToggleESP");
+                    state.ESP = gui.Switch("Enable ESP", state.ESP).OnChange(v => state.ESP = v).FullRowClick().Render();
+
                     if (state.ESP)
                     {
-                        guiHelper.AddSpace(10);
-                        DrawSlider("Distance", v => state.ESPDistance = v, state.ESPDistance, 50f, 500f, "m");
-                        guiHelper.AddSpace(12);
+                        gui.Space(10);
+                        gui.Label("Detection Distance").Muted().Render();
+                        state.ESPDistance = gui.Slider(state.ESPDistance).Range(50f, 500f).ShowValue(true).Format("{0:F0}m").OnChange(v => state.ESPDistance = v).Render();
 
-                        guiHelper.BeginHorizontalGroup();
+                        gui.Space(12);
+                        gui.Separator().Decorative().Render();
+                        gui.Space(8);
 
-                        guiHelper.BeginVerticalGroup(GUILayout.Width(150));
-                        DrawCheckbox("Players", v => state.ESPShowPlayers = v, state.ESPShowPlayers);
-                        DrawCheckbox("Monsters", v => state.ESPShowMonsters = v, state.ESPShowMonsters);
-                        DrawCheckbox("Loot", v => state.ESPShowLoot = v, state.ESPShowLoot);
-                        guiHelper.EndVerticalGroup();
+                        gui.Row(() =>
+                        {
+                            gui.Column(
+                                () =>
+                                {
+                                    state.ESPShowPlayers = gui.Checkbox("Players", state.ESPShowPlayers).OnChange(v => state.ESPShowPlayers = v).Render();
+                                    gui.Space(4);
+                                    state.ESPShowMonsters = gui.Checkbox("Monsters", state.ESPShowMonsters).OnChange(v => state.ESPShowMonsters = v).Render();
+                                    gui.Space(4);
+                                    state.ESPShowLoot = gui.Checkbox("Loot", state.ESPShowLoot).OnChange(v => state.ESPShowLoot = v).Render();
+                                },
+                                GUILayout.Width(150)
+                            );
 
-                        guiHelper.BeginVerticalGroup(GUILayout.Width(150));
-                        DrawCheckbox("Interactors", v => state.ESPShowInteractors = v, state.ESPShowInteractors);
-                        DrawCheckbox("NPCs", v => state.ESPShowNPCs = v, state.ESPShowNPCs);
-                        DrawCheckbox("Field Skills", v => state.ESPShowFieldSkills = v, state.ESPShowFieldSkills);
-                        guiHelper.EndVerticalGroup();
-
-                        guiHelper.EndHorizontalGroup();
+                            gui.Column(
+                                () =>
+                                {
+                                    state.ESPShowInteractors = gui.Checkbox("Interactors", state.ESPShowInteractors).OnChange(v => state.ESPShowInteractors = v).Render();
+                                    gui.Space(4);
+                                    state.ESPShowNPCs = gui.Checkbox("NPCs", state.ESPShowNPCs).OnChange(v => state.ESPShowNPCs = v).Render();
+                                    gui.Space(4);
+                                    state.ESPShowFieldSkills = gui.Checkbox("Field Skills", state.ESPShowFieldSkills).OnChange(v => state.ESPShowFieldSkills = v).Render();
+                                    gui.Space(4);
+                                    state.ESPShowProjectiles = gui.Checkbox("Projectiles", state.ESPShowProjectiles).OnChange(v => state.ESPShowProjectiles = v).Render();
+                                    gui.Space(4);
+                                    state.ESPShowAuraSkills = gui.Checkbox("Aura Skills", state.ESPShowAuraSkills).OnChange(v => state.ESPShowAuraSkills = v).Render();
+                                },
+                                GUILayout.Width(150)
+                            );
+                        });
                     }
-                }
-            );
+                })
+                .Render();
 
-            guiHelper.AddSpace(12);
+            gui.Space(12);
 
-            DrawCard(
-                "Lighting",
-                () =>
+            gui.Card()
+                .Title("Lighting")
+                .Header(() =>
                 {
-                    DrawCheckbox(
-                        "Fullbright",
-                        v =>
+                    state.Fullbright = gui.Switch("Fullbright", state.Fullbright)
+                        .OnChange(v =>
                         {
                             state.Fullbright = v;
                             fullbrightManager.SetEnabled(v);
-                        },
-                        state.Fullbright,
-                        "ToggleFullbright"
-                    );
-                }
-            );
+                        })
+                        .FullRowClick()
+                        .Render();
+                })
+                .Render();
 
-            guiHelper.EndVerticalGroup();
+            gui.EndVerticalGroup();
         }
 
-        private void DrawCard(string title, Action content)
+        void RenderEntitiesTab()
         {
-            guiHelper.BeginCard(width: -1, height: -1);
-            guiHelper.Heading(title);
-            guiHelper.CardContent(content);
-            guiHelper.EndCard();
-        }
+            gui.BeginVerticalGroup(GUILayout.ExpandWidth(true));
 
-        private void DrawCheckbox(string label, Action<bool> onChange, bool value, string hotkeyId = null)
-        {
-            GUILayout.BeginHorizontal();
-            bool newValue = guiHelper.Toggle(label, value, ControlVariant.Default, ControlSize.Default, (v) => onChange(v), false);
-            if (!string.IsNullOrEmpty(hotkeyId))
+            if (Time.time - lastPlayerRefresh >= PLAYER_REFRESH_RATE)
             {
-                GUILayout.FlexibleSpace();
-                guiHelper.MutedLabel($"[{configManager.GetHotkey(hotkeyId)}]");
+                cachedPlayers = PlayerAPI.GetAllPlayers().Where(p => p != null && !string.IsNullOrEmpty(p.nickName) && !p.dead).OrderBy(p => p.ActorType).ThenBy(p => p.nickName).ToArray();
+                lastPlayerRefresh = Time.time;
             }
-            GUILayout.EndHorizontal();
-        }
 
-        private void DrawSlider(string label, Action<float> onChange, float value, float min, float max, string suffix)
-        {
-            guiHelper.Label(label);
-            float newValue = guiHelper.Slider(value).Range(min, max).ShowValue(false).Render();
-            if (newValue != value)
+            ProtoActor local = PlayerAPI.GetLocalPlayer();
+
+            gui.Row(() =>
             {
-                onChange(newValue);
-            }
-            guiHelper.MutedLabel($"{newValue:F1}{suffix}");
-        }
-
-        private void DrawTeleportControls()
-        {
-            GUILayout.BeginHorizontal();
-            if (guiHelper.Button("Fwd 50m", ControlVariant.Secondary, ControlSize.Small))
-                movementManager.TeleportForward(50f);
-            if (guiHelper.Button("Fwd 100m", ControlVariant.Secondary, ControlSize.Small))
-                movementManager.TeleportForward(100f);
-            GUILayout.EndHorizontal();
-
-            guiHelper.AddSpace(8);
-
-            for (int i = 0; i < 3; i++)
-            {
-                int idx = i;
-                GUILayout.BeginHorizontal();
-                if (guiHelper.Button($"Save Pos {idx + 1}", ControlVariant.Default, ControlSize.Small))
-                    SavePosition(idx + 1);
-                if (guiHelper.Button($"Load Pos {idx + 1}", ControlVariant.Secondary, ControlSize.Small))
-                    LoadPosition(idx + 1);
-                GUILayout.EndHorizontal();
-                guiHelper.AddSpace(4);
-            }
-        }
-
-        private void DrawItemSpawner()
-        {
-            DrawCard(
-                "Item Spawner",
-                () =>
-                {
-                    GUILayout.BeginHorizontal();
-                    guiHelper.Label("ID:");
-                    guiHelper.Label(itemSpawnIDInput);
-                    if (guiHelper.Button("Spawn", ControlVariant.Default, ControlSize.Default))
+                gui.Column(
+                    () =>
                     {
-                        if (int.TryParse(itemSpawnIDInput, out int id))
-                            ItemSpawnerPatches.SetItemToSpawn(id, 1);
-                    }
-                    GUILayout.EndHorizontal();
-
-                    guiHelper.AddSpace(12);
-
-                    if (guiHelper.Button(itemListLoaded ? "Refresh List" : "Load Items", ControlVariant.Secondary, ControlSize.Small))
-                    {
-                        LoadItemList();
-                    }
-
-                    if (itemListLoaded)
-                    {
-                        guiHelper.AddSpace(4);
-                        guiHelper.Label(itemSearchFilter);
-
-                        itemListScrollPosition = GUILayout.BeginScrollView(itemListScrollPosition, GUILayout.Height(200));
-                        var filtered = cachedItemList.Where(x => string.IsNullOrEmpty(itemSearchFilter) || x.name.IndexOf(itemSearchFilter, StringComparison.OrdinalIgnoreCase) >= 0).Take(100);
-
-                        foreach (var item in filtered)
-                        {
-                            if (guiHelper.Button($"{item.name} ({item.id})", ControlVariant.Secondary, ControlSize.Small))
+                        gui.Card()
+                            .Title("Entity List")
+                            .Header(() =>
                             {
-                                itemSpawnIDInput = item.id.ToString();
-                            }
-                        }
-                        GUILayout.EndScrollView();
-                    }
-                }
-            );
+                                gui.Label($"Total: {cachedPlayers.Length}").Muted().Render();
+                                gui.Space(8);
+
+                                if (cachedPlayers.Length == 0)
+                                {
+                                    gui.Label("No entities found").Muted().Render();
+                                }
+                                else
+                                {
+                                    int shown = Mathf.Min(cachedPlayers.Length, 15);
+                                    for (int i = 0; i < shown; i++)
+                                    {
+                                        ProtoActor actor = cachedPlayers[i];
+                                        string prefix = actor.ActorType == ActorType.Player ? "[P]" : "[M]";
+                                        string name = actor.nickName;
+                                        if (local != null && actor.ActorID == local.ActorID)
+                                            name += " [YOU]";
+
+                                        bool isSelected = selectedActor != null && selectedActor.ActorID == actor.ActorID;
+
+                                        if (gui.Button($"{prefix} {name}").Variant(isSelected ? ControlVariant.Secondary : ControlVariant.Ghost).Small().Render())
+                                        {
+                                            selectedActor = actor;
+                                        }
+                                    }
+
+                                    if (cachedPlayers.Length > shown)
+                                        gui.Label($"...and {cachedPlayers.Length - shown} more").Muted().Render();
+                                }
+                            })
+                            .Render();
+                    },
+                    GUILayout.Width(300)
+                );
+
+                gui.Space(12);
+
+                gui.Column(
+                    () =>
+                    {
+                        gui.Card()
+                            .Title("Entity Actions")
+                            .Header(() =>
+                            {
+                                if (selectedActor == null)
+                                {
+                                    gui.Label("Select an entity to perform actions").Muted().Render();
+                                }
+                                else
+                                {
+                                    string actorKind = selectedActor.ActorType == ActorType.Player ? "Player" : "Monster";
+                                    gui.Label($"Target: {selectedActor.nickName} ({actorKind})").Muted().Render();
+
+                                    if (local != null && selectedActor.ActorID != local.ActorID)
+                                    {
+                                        float dist = Vector3.Distance(selectedActor.transform.position, local.transform.position);
+                                        gui.Label($"Distance: {dist:F1}m").Muted().Render();
+                                    }
+
+                                    gui.Label($"Actor ID: {selectedActor.ActorID}").Muted().Render();
+                                    gui.Space(14);
+
+                                    if (local != null)
+                                    {
+                                        if (gui.Button("Teleport To Target").Default().Render())
+                                            movementManager.TeleportToPlayer(selectedActor);
+
+                                        if (selectedActor.ActorID != local.ActorID)
+                                        {
+                                            gui.Space(8);
+                                            if (gui.Button("Teleport Target To Me").Default().Render())
+                                                movementManager.TeleportPlayerToSelf(selectedActor);
+
+                                            gui.Space(8);
+                                            if (gui.Button(selectedActor.ActorType == ActorType.Player ? "Kill Player" : "Kill Monster").Destructive().Render())
+                                            {
+                                                KillActor(selectedActor);
+                                            }
+                                        }
+                                    }
+                                }
+                            })
+                            .Render();
+                    },
+                    GUILayout.ExpandWidth(true)
+                );
+            });
+
+            gui.EndVerticalGroup();
         }
 
-        private void DrawHotkeyButton(string label, string id)
+        void RenderSettingsTab()
         {
-            GUILayout.BeginHorizontal();
-            guiHelper.Label(label);
-            GUILayout.FlexibleSpace();
-            string keyName = configManager.GetHotkey(id).ToString();
-            if (guiHelper.Button(keyName, ControlVariant.Secondary, ControlSize.Small))
-            {
-                activeHotkeyId = id;
-                isListeningForHotkey = true;
-            }
-            GUILayout.EndHorizontal();
-            guiHelper.AddSpace(4);
+            gui.BeginVerticalGroup(GUILayout.ExpandWidth(true));
+
+            gui.Card()
+                .Title("Hotkeys")
+                .Header(() =>
+                {
+                    if (listeningForHotkey)
+                    {
+                        gui.Label($"Press any key to bind '{activeHotkeyId}'...").Render();
+                        gui.Space(8);
+                        if (gui.Button("Cancel").Secondary().Small().Render())
+                        {
+                            listeningForHotkey = false;
+                            activeHotkeyId = "";
+                        }
+                    }
+                    else
+                    {
+                        string[] hotkeyIds = { "ToggleMenu", "ToggleGodMode", "ToggleESP", "ToggleAutoLoot", "ToggleFullbright", "ToggleSpeedBoost", "ToggleInfiniteStamina", "ToggleNoFallDamage" };
+
+                        string[] hotkeyLabels = { "Toggle Menu", "God Mode", "ESP", "Auto Loot", "Fullbright", "Speed Boost", "Infinite Stamina", "No Fall Damage" };
+
+                        for (int i = 0; i < hotkeyIds.Length; i++)
+                        {
+                            string hid = hotkeyIds[i];
+                            string hlabel = hotkeyLabels[i];
+                            string keyName = configManager.GetHotkey(hid).ToString();
+
+                            gui.Row(() =>
+                            {
+                                gui.Label(hlabel).Render();
+                                gui.Flex();
+                                if (gui.Button(keyName).Secondary().Small().Render())
+                                {
+                                    activeHotkeyId = hid;
+                                    listeningForHotkey = true;
+                                }
+                            });
+                            gui.Space(4);
+                        }
+                    }
+                })
+                .Render();
+
+            gui.Space(12);
+
+            gui.Card()
+                .Title("Configuration")
+                .Header(() =>
+                {
+                    if (gui.Button("Save Configuration").Default().Render())
+                    {
+                        MelonPreferences.Save();
+                        MelonLogger.Msg("Configuration saved");
+                    }
+
+                    gui.Space(6);
+
+                    if (gui.Button("Reload Configuration").Default().Render())
+                    {
+                        configManager.LoadAllConfigs();
+                        MelonLogger.Msg("Configuration reloaded");
+                    }
+                })
+                .Render();
+
+            gui.Space(12);
+
+            gui.Card()
+                .Title("Appearance")
+                .Header(() =>
+                {
+                    gui.Label("Theme").Muted().Render();
+                    gui.Space(4);
+                    gui.ThemeChanger().ShowPreview(true).Render();
+
+                    gui.Space(10);
+
+                    gui.Label("Font").Muted().Render();
+                    gui.Space(4);
+                    gui.FontChanger().ShowPreview(true).OnChange(f => gui.SetFont(f)).Render();
+                })
+                .Render();
+
+            gui.EndVerticalGroup();
         }
 
         public FeatureState GetFeatureState() => state;
@@ -647,212 +841,10 @@ namespace Mimesis_Mod_Menu.Core
             pickupManager?.Stop();
         }
 
-        void DrawEntitiesTab()
-        {
-            guiHelper.BeginVerticalGroup(GUILayout.ExpandWidth(true));
-
-            UpdatePlayerCache();
-
-            guiHelper.BeginHorizontalGroup();
-
-            guiHelper.BeginVerticalGroup(GUILayout.Width(300));
-            DrawCard(
-                "Entity List",
-                () =>
-                {
-                    guiHelper.MutedLabel($"Total: {cachedPlayers.Length}");
-                    guiHelper.AddSpace(8);
-
-                    if (cachedPlayers.Length == 0)
-                    {
-                        guiHelper.MutedLabel("No entities found");
-                    }
-                    else
-                    {
-                        int maxDisplay = Mathf.Min(cachedPlayers.Length, 15);
-                        for (int i = 0; i < maxDisplay; i++)
-                            DrawActorListItem(cachedPlayers[i]);
-
-                        if (cachedPlayers.Length > maxDisplay)
-                            guiHelper.MutedLabel($"...and {cachedPlayers.Length - maxDisplay} more");
-                    }
-                }
-            );
-            guiHelper.EndVerticalGroup();
-
-            guiHelper.AddSpace(12);
-
-            guiHelper.BeginVerticalGroup(GUILayout.ExpandWidth(true));
-            DrawEntityActionsPanel();
-            guiHelper.EndVerticalGroup();
-
-            guiHelper.EndHorizontalGroup();
-            guiHelper.EndVerticalGroup();
-        }
-
-        private void DrawEntityActionsPanel()
-        {
-            ProtoActor localPlayer = PlayerAPI.GetLocalPlayer();
-
-            DrawCard(
-                "Entity Actions",
-                () =>
-                {
-                    if (selectedPlayer != null)
-                    {
-                        string actorType = selectedPlayer.ActorType == ActorType.Player ? "Player" : "Monster";
-                        guiHelper.MutedLabel($"Target: {selectedPlayer.nickName} ({actorType})");
-                    }
-                    else
-                    {
-                        guiHelper.MutedLabel("Select an entity to perform actions");
-                    }
-
-                    guiHelper.AddSpace(8);
-
-                    if (selectedPlayer == null)
-                    {
-                        guiHelper.MutedLabel("No entity selected");
-                    }
-                    else
-                    {
-                        DrawActorInfo(selectedPlayer, localPlayer);
-                        guiHelper.AddSpace(14);
-
-                        if (localPlayer != null)
-                        {
-                            if (guiHelper.Button("Teleport To Target", ControlVariant.Default, ControlSize.Default))
-                                movementManager.TeleportToPlayer(selectedPlayer);
-
-                            if (selectedPlayer.ActorID != localPlayer.ActorID)
-                            {
-                                guiHelper.AddSpace(8);
-                                if (guiHelper.Button("Teleport Target To Me", ControlVariant.Default, ControlSize.Default))
-                                    movementManager.TeleportPlayerToSelf(selectedPlayer);
-
-                                guiHelper.AddSpace(8);
-                                if (selectedPlayer.ActorType == ActorType.Player)
-                                {
-                                    if (guiHelper.Button("Kill Player", ControlVariant.Destructive, ControlSize.Default))
-                                        KillActor(selectedPlayer);
-                                }
-                                else if (selectedPlayer.ActorType == ActorType.Monster)
-                                {
-                                    if (guiHelper.Button("Kill Monster", ControlVariant.Destructive, ControlSize.Default))
-                                        KillActor(selectedPlayer);
-                                }
-                            }
-                        }
-                    }
-                }
-            );
-        }
-
-        void DrawSettingsTab()
-        {
-            guiHelper.BeginVerticalGroup(GUILayout.ExpandWidth(true));
-
-            DrawCard(
-                "Hotkeys",
-                () =>
-                {
-                    if (isListeningForHotkey)
-                    {
-                        guiHelper.Label($"Press any key to bind {activeHotkeyId}...");
-                        if (guiHelper.Button("Cancel", ControlVariant.Secondary, ControlSize.Small))
-                        {
-                            isListeningForHotkey = false;
-                            activeHotkeyId = "";
-                        }
-                    }
-                    else
-                    {
-                        DrawHotkeyButton("Toggle Menu", "ToggleMenu");
-                        DrawHotkeyButton("God Mode", "ToggleGodMode");
-                        DrawHotkeyButton("ESP", "ToggleESP");
-                        DrawHotkeyButton("Auto Loot", "ToggleAutoLoot");
-                        DrawHotkeyButton("Fullbright", "ToggleFullbright");
-                        DrawHotkeyButton("Speed Boost", "ToggleSpeedBoost");
-                        DrawHotkeyButton("Infinite Stamina", "ToggleInfiniteStamina");
-                        DrawHotkeyButton("No Fall Damage", "ToggleNoFallDamage");
-                    }
-                }
-            );
-
-            guiHelper.AddSpace(12);
-
-            DrawCard(
-                "Configuration",
-                () =>
-                {
-                    if (guiHelper.Button("Save Configuration", ControlVariant.Default, ControlSize.Default))
-                    {
-                        MelonPreferences.Save();
-                        MelonLogger.Msg("Configuration saved");
-                    }
-
-                    guiHelper.AddSpace(6);
-
-                    if (guiHelper.Button("Reload Configuration", ControlVariant.Default, ControlSize.Default))
-                    {
-                        configManager.LoadAllConfigs();
-                        MelonLogger.Msg("Configuration reloaded");
-                    }
-                }
-            );
-
-            guiHelper.EndVerticalGroup();
-        }
-
-        private void UpdatePlayerCache()
-        {
-            if (Time.time - lastPlayerCacheTime < PLAYER_CACHE_INTERVAL)
-                return;
-
-            ProtoActor[] allActors = PlayerAPI.GetAllPlayers();
-            cachedPlayers = allActors.Where(p => p != null && !string.IsNullOrEmpty(p.nickName) && !p.dead).OrderBy(p => p.ActorType).ThenBy(p => p.nickName).ToArray();
-            lastPlayerCacheTime = Time.time;
-        }
-
-        private void DrawActorListItem(ProtoActor actor)
-        {
-            string label = actor.nickName;
-            ProtoActor localPlayer = PlayerAPI.GetLocalPlayer();
-            string typeLabel = actor.ActorType == ActorType.Player ? "[P]" : "[M]";
-
-            if (localPlayer != null && actor.ActorID == localPlayer.ActorID)
-                label += " [YOU]";
-
-            label = $"{typeLabel} {label}";
-
-            bool isSelected = selectedPlayer != null && selectedPlayer.ActorID == actor.ActorID;
-            ControlVariant variant = isSelected ? ControlVariant.Secondary : ControlVariant.Ghost;
-
-            if (guiHelper.Button(label, variant, ControlSize.Small))
-                selectedPlayer = actor;
-        }
-
-        private void DrawActorInfo(ProtoActor selectedTarget, ProtoActor localPlayer)
-        {
-            if (selectedTarget == null)
-                return;
-
-            guiHelper.MutedLabel($"Name: {selectedTarget.nickName}");
-            guiHelper.MutedLabel($"Type: {(selectedTarget.ActorType == ActorType.Player ? "Player" : "Monster")}");
-            guiHelper.MutedLabel($"Actor ID: {selectedTarget.ActorID}");
-
-            if (localPlayer != null && selectedTarget.ActorID != localPlayer.ActorID)
-            {
-                float distance = Vector3.Distance(selectedTarget.transform.position, localPlayer.transform.position);
-                guiHelper.MutedLabel($"Distance: {distance:F1}m");
-            }
-        }
-
         private void KillActor(ProtoActor target)
         {
             if (target == null)
                 return;
-
             target.OnActorDeath(
                 new ProtoActor.ActorDeathInfo
                 {
@@ -864,45 +856,67 @@ namespace Mimesis_Mod_Menu.Core
             );
         }
 
+        private void KillAllActors(ActorType type)
+        {
+            try
+            {
+                foreach (ProtoActor actor in PlayerAPI.GetAllPlayers())
+                    if (actor != null && actor.ActorType == type && !actor.dead)
+                        KillActor(actor);
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"KillAllActors error: {ex.Message}");
+            }
+        }
+
+        private void ClearAllMonsters()
+        {
+            try
+            {
+                foreach (ProtoActor actor in PlayerAPI.GetAllPlayers())
+                    if (actor != null && actor.ActorType == ActorType.Monster)
+                        KillActor(actor);
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"ClearAllMonsters error: {ex.Message}");
+            }
+        }
+
         private void AddCurrency(int amount)
         {
             try
             {
                 var hub = UnityEngine.Object.FindObjectOfType<Hub>();
-                if (hub != null)
+                if (hub == null)
+                    return;
+                var vworld = ReflectionHelper.GetFieldValue(hub, "vworld") ?? ReflectionHelper.GetPropertyValue(hub, "vworld");
+                if (vworld == null)
+                    return;
+                var roomMgr = ReflectionHelper.GetFieldValue(vworld, "_vRoomManager") ?? ReflectionHelper.GetPropertyValue(vworld, "VRoomManager");
+                if (roomMgr == null)
+                    return;
+                var vrooms = ReflectionHelper.GetFieldValue(roomMgr, "_vrooms") as IDictionary;
+                if (vrooms == null)
+                    return;
+                foreach (DictionaryEntry entry in vrooms)
                 {
-                    var vworld = ReflectionHelper.GetFieldValue(hub, "vworld") ?? ReflectionHelper.GetPropertyValue(hub, "vworld");
-                    if (vworld != null)
+                    var room = entry.Value;
+                    if (room == null)
+                        continue;
+                    if (room is MaintenanceRoom mRoom)
                     {
-                        var roomManager = ReflectionHelper.GetFieldValue(vworld, "_vRoomManager") ?? ReflectionHelper.GetPropertyValue(vworld, "VRoomManager");
-                        if (roomManager != null)
-                        {
-                            var vrooms = ReflectionHelper.GetFieldValue(roomManager, "_vrooms") as IDictionary;
-                            if (vrooms != null)
-                            {
-                                foreach (DictionaryEntry entry in vrooms)
-                                {
-                                    var room = entry.Value;
-                                    if (room == null)
-                                        continue;
-
-                                    if (room is MaintenanceRoom mRoom)
-                                    {
-                                        ReflectionHelper.InvokeMethod(mRoom, "AddCurrency", amount);
-                                        MelonLogger.Msg($"[AddCurrency] Added {amount} currency successfully!");
-                                        return;
-                                    }
-
-                                    var currentVal = ReflectionHelper.GetPropertyValue(room, "Currency");
-                                    if (currentVal != null)
-                                    {
-                                        ReflectionHelper.SetPropertyValue(room, "Currency", (int)currentVal + amount);
-                                        MelonLogger.Msg($"[AddCurrency] Added {amount} currency successfully!");
-                                        return;
-                                    }
-                                }
-                            }
-                        }
+                        ReflectionHelper.InvokeMethod(mRoom, "AddCurrency", amount);
+                        MelonLogger.Msg($"[AddCurrency] Added {amount} currency successfully!");
+                        return;
+                    }
+                    var cur = ReflectionHelper.GetPropertyValue(room, "Currency");
+                    if (cur != null)
+                    {
+                        ReflectionHelper.SetPropertyValue(room, "Currency", (int)cur + amount);
+                        MelonLogger.Msg($"[AddCurrency] Added {amount} currency successfully!");
+                        return;
                     }
                 }
             }
@@ -916,60 +930,41 @@ namespace Mimesis_Mod_Menu.Core
         {
             try
             {
-                cachedItemList.Clear();
+                cachedItems.Clear();
+                object excelData = null;
 
-                object excelDataManager = null;
+                var dm = UnityEngine.Object.FindObjectOfType<DataManager>();
+                if (dm != null)
+                    excelData = ReflectionHelper.GetFieldValue(dm, "_excelDataManager");
 
-                var dataManager = UnityEngine.Object.FindObjectOfType<DataManager>();
-                if (dataManager != null)
-                {
-                    excelDataManager = ReflectionHelper.GetFieldValue(dataManager, "_excelDataManager");
-                }
-
-                if (excelDataManager == null)
+                if (excelData == null)
                 {
                     var hub = UnityEngine.Object.FindObjectOfType<Hub>();
                     if (hub != null)
-                    {
-                        excelDataManager = ReflectionHelper.GetFieldValue(hub, "_excelDataManager") ?? ReflectionHelper.GetPropertyValue(hub, "ExcelDataManager");
-                    }
+                        excelData = ReflectionHelper.GetFieldValue(hub, "_excelDataManager") ?? ReflectionHelper.GetPropertyValue(hub, "ExcelDataManager");
                 }
 
-                if (excelDataManager != null)
+                if (excelData != null)
                 {
-                    var itemInfoDict = ReflectionHelper.GetPropertyValue(excelDataManager, "ItemInfoDict") as IDictionary;
-                    var localizationDict = ReflectionHelper.GetPropertyValue(excelDataManager, "LocalizationDict") as IDictionary;
+                    var itemDict = ReflectionHelper.GetPropertyValue(excelData, "ItemInfoDict") as IDictionary;
+                    var locDict = ReflectionHelper.GetPropertyValue(excelData, "LocalizationDict") as IDictionary;
 
-                    if (itemInfoDict != null)
+                    if (itemDict != null)
                     {
-                        foreach (DictionaryEntry entry in itemInfoDict)
+                        foreach (DictionaryEntry entry in itemDict)
                         {
                             int masterId = (int)entry.Key;
-                            var itemInfo = entry.Value;
-
+                            var info = entry.Value;
                             string displayName = "Unknown";
+
                             try
                             {
-                                var nameKeyField = ReflectionHelper.GetFieldValue(itemInfo, "Name");
-                                string nameKey = nameKeyField?.ToString() ?? "";
-
-                                if (localizationDict != null && !string.IsNullOrEmpty(nameKey) && localizationDict.Contains(nameKey))
+                                string nameKey = ReflectionHelper.GetFieldValue(info, "Name")?.ToString() ?? "";
+                                if (locDict != null && !string.IsNullOrEmpty(nameKey) && locDict.Contains(nameKey))
                                 {
-                                    var locData = localizationDict[nameKey];
-                                    if (locData != null)
-                                    {
-                                        var enField = ReflectionHelper.GetFieldValue(locData, "en");
-                                        string enText = enField?.ToString();
-
-                                        if (!string.IsNullOrEmpty(enText))
-                                            displayName = enText;
-                                        else
-                                            displayName = nameKey;
-                                    }
-                                    else
-                                    {
-                                        displayName = nameKey;
-                                    }
+                                    var loc = locDict[nameKey];
+                                    string en = ReflectionHelper.GetFieldValue(loc, "en")?.ToString();
+                                    displayName = !string.IsNullOrEmpty(en) ? en : nameKey;
                                 }
                                 else
                                 {
@@ -978,64 +973,23 @@ namespace Mimesis_Mod_Menu.Core
                             }
                             catch { }
 
-                            cachedItemList.Add((masterId, displayName));
+                            cachedItems.Add((masterId, displayName));
                         }
 
-                        cachedItemList = cachedItemList.OrderBy(x => x.id).ToList();
-                        itemListLoaded = true;
-                        MelonLogger.Msg($"[ItemSpawner] Loaded {cachedItemList.Count} items from game data");
+                        cachedItems = cachedItems.OrderBy(x => x.id).ToList();
+                        itemsLoaded = true;
+                        MelonLogger.Msg($"[ItemSpawner] Loaded {cachedItems.Count} items");
                         return;
                     }
                 }
 
-                MelonLogger.Warning("[ItemSpawner] Could not load item list - DataManager not found");
-                itemListLoaded = true;
+                MelonLogger.Warning("[ItemSpawner] Could not load item list");
+                itemsLoaded = true;
             }
             catch (Exception ex)
             {
-                MelonLogger.Error($"[ItemSpawner] LoadItemList error: {ex.Message}");
-                itemListLoaded = true;
-            }
-        }
-
-        private void KillAllActors(ActorType type)
-        {
-            try
-            {
-                ProtoActor[] allActors = PlayerAPI.GetAllPlayers();
-                foreach (ProtoActor actor in allActors)
-                {
-                    if (actor != null && actor.ActorType == type && !actor.dead)
-                        KillActor(actor);
-                }
-
-                string typeName = type == ActorType.Player ? "players" : "monsters";
-                MelonLogger.Msg($"Killed all {typeName}");
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Error($"KillAllActors error: {ex.Message}");
-            }
-        }
-
-        private void ClearAllMonsters()
-        {
-            try
-            {
-                ProtoActor[] allActors = PlayerAPI.GetAllPlayers();
-                int count = 0;
-                foreach (ProtoActor actor in allActors)
-                {
-                    if (actor != null && actor.ActorType == ActorType.Monster)
-                    {
-                        KillActor(actor);
-                        count++;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Error($"ClearAllMonsters error: {ex.Message}");
+                MelonLogger.Error($"[ItemSpawner] Error: {ex.Message}");
+                itemsLoaded = true;
             }
         }
 
@@ -1043,17 +997,13 @@ namespace Mimesis_Mod_Menu.Core
         {
             try
             {
-                var localPlayer = PlayerAPI.GetLocalPlayer();
-                if (localPlayer == null)
+                var p = PlayerAPI.GetLocalPlayer();
+                if (p == null)
                     return;
-
-                var cc = localPlayer.GetComponent<CharacterController>();
+                var cc = p.GetComponent<CharacterController>();
                 if (cc != null)
-                {
                     cc.enabled = false;
-                }
-
-                var rb = localPlayer.GetComponent<Rigidbody>();
+                var rb = p.GetComponent<Rigidbody>();
                 if (rb != null)
                 {
                     rb.isKinematic = true;
@@ -1070,17 +1020,13 @@ namespace Mimesis_Mod_Menu.Core
         {
             try
             {
-                var localPlayer = PlayerAPI.GetLocalPlayer();
-                if (localPlayer == null)
+                var p = PlayerAPI.GetLocalPlayer();
+                if (p == null)
                     return;
-
-                var cc = localPlayer.GetComponent<CharacterController>();
+                var cc = p.GetComponent<CharacterController>();
                 if (cc != null)
-                {
                     cc.enabled = true;
-                }
-
-                var rb = localPlayer.GetComponent<Rigidbody>();
+                var rb = p.GetComponent<Rigidbody>();
                 if (rb != null)
                 {
                     rb.isKinematic = false;
@@ -1093,44 +1039,34 @@ namespace Mimesis_Mod_Menu.Core
             }
         }
 
-        private void UpdateFly()
+        private void RunFly()
         {
             if (!state.Fly)
                 return;
-
             try
             {
-                var localPlayer = PlayerAPI.GetLocalPlayer();
-                if (localPlayer == null)
+                var p = PlayerAPI.GetLocalPlayer();
+                if (p == null)
                     return;
-
                 var cam = Camera.main;
                 if (cam == null)
                     return;
-
-                Vector3 moveDir = Vector3.zero;
-                var keyboard = Keyboard.current;
-
-                Vector3 camForward = cam.transform.forward;
-                Vector3 camRight = cam.transform.right;
-
-                if (keyboard.wKey.isPressed)
-                    moveDir += camForward;
-                if (keyboard.sKey.isPressed)
-                    moveDir -= camForward;
-                if (keyboard.aKey.isPressed)
-                    moveDir -= camRight;
-                if (keyboard.dKey.isPressed)
-                    moveDir += camRight;
-                if (keyboard.spaceKey.isPressed)
-                    moveDir += Vector3.up;
-                if (keyboard.leftCtrlKey.isPressed)
-                    moveDir -= Vector3.up;
-
-                if (moveDir != Vector3.zero)
-                {
-                    localPlayer.transform.position += moveDir.normalized * state.FlySpeed * Time.deltaTime;
-                }
+                var kb = Keyboard.current;
+                Vector3 dir = Vector3.zero;
+                if (kb.wKey.isPressed)
+                    dir += cam.transform.forward;
+                if (kb.sKey.isPressed)
+                    dir -= cam.transform.forward;
+                if (kb.aKey.isPressed)
+                    dir -= cam.transform.right;
+                if (kb.dKey.isPressed)
+                    dir += cam.transform.right;
+                if (kb.spaceKey.isPressed)
+                    dir += Vector3.up;
+                if (kb.leftCtrlKey.isPressed)
+                    dir -= Vector3.up;
+                if (dir != Vector3.zero)
+                    p.transform.position += dir.normalized * state.FlySpeed * Time.deltaTime;
             }
             catch { }
         }
@@ -1139,23 +1075,16 @@ namespace Mimesis_Mod_Menu.Core
         {
             try
             {
-                var localPlayer = PlayerAPI.GetLocalPlayer();
-                if (localPlayer == null)
+                var p = PlayerAPI.GetLocalPlayer();
+                if (p == null)
                     return;
-
-                Vector3 pos = localPlayer.transform.position;
-                switch (slot)
-                {
-                    case 1:
-                        state.SavedPosition1 = pos;
-                        break;
-                    case 2:
-                        state.SavedPosition2 = pos;
-                        break;
-                    case 3:
-                        state.SavedPosition3 = pos;
-                        break;
-                }
+                Vector3 pos = p.transform.position;
+                if (slot == 1)
+                    state.SavedPosition1 = pos;
+                else if (slot == 2)
+                    state.SavedPosition2 = pos;
+                else if (slot == 3)
+                    state.SavedPosition3 = pos;
                 MelonLogger.Msg($"Saved position {slot}: {pos}");
             }
             catch (Exception ex)
@@ -1168,34 +1097,22 @@ namespace Mimesis_Mod_Menu.Core
         {
             try
             {
-                var localPlayer = PlayerAPI.GetLocalPlayer();
-                if (localPlayer == null)
+                var p = PlayerAPI.GetLocalPlayer();
+                if (p == null)
                     return;
-
-                Vector3 pos = Vector3.zero;
-                switch (slot)
-                {
-                    case 1:
-                        pos = state.SavedPosition1;
-                        break;
-                    case 2:
-                        pos = state.SavedPosition2;
-                        break;
-                    case 3:
-                        pos = state.SavedPosition3;
-                        break;
-                }
-
+                Vector3 pos =
+                    slot == 1 ? state.SavedPosition1
+                    : slot == 2 ? state.SavedPosition2
+                    : state.SavedPosition3;
                 if (pos == Vector3.zero)
                 {
                     MelonLogger.Warning($"Position {slot} not saved yet");
                     return;
                 }
-
-                var cc = localPlayer.GetComponent<CharacterController>();
+                var cc = p.GetComponent<CharacterController>();
                 if (cc != null)
                     cc.enabled = false;
-                localPlayer.transform.position = pos;
+                p.transform.position = pos;
                 if (cc != null)
                     cc.enabled = true;
             }
@@ -1209,18 +1126,10 @@ namespace Mimesis_Mod_Menu.Core
         {
             try
             {
-                var localPlayer = PlayerAPI.GetLocalPlayer();
-                if (localPlayer == null)
+                var p = PlayerAPI.GetLocalPlayer();
+                if (p == null)
                     return;
-
-                if (state.CustomScale)
-                {
-                    localPlayer.transform.localScale = Vector3.one * state.PlayerScale;
-                }
-                else
-                {
-                    localPlayer.transform.localScale = Vector3.one;
-                }
+                p.transform.localScale = state.CustomScale ? Vector3.one * state.PlayerScale : Vector3.one;
             }
             catch (Exception ex)
             {
