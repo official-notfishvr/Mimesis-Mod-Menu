@@ -400,43 +400,35 @@ namespace Mimesis_Mod_Menu.Core
 
     #region Maintenance Room Patches
 
-    [HarmonyPatch(typeof(VPlayer), nameof(VPlayer.HandleBuyItem))]
-    internal static class VPlayerHandleBuyItemPatch
+    [HarmonyPatch]
+    internal static class MaintenanceRoomBuyItemForceBuyPatch
     {
-        private static bool Prefix(VPlayer __instance, int itemMasterID, int hashCode, int machineIndex, ref MsgErrorCode __result)
+        private static MethodBase TargetMethod()
+        {
+            try
+            {
+                return AccessTools.Method(typeof(MaintenanceRoom), "BuyItem", new Type[] { typeof(int), typeof(PosWithRot) });
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"MaintenanceRoomBuyItemForceBuyPatch TargetMethod error: {ex.Message}");
+                return null;
+            }
+        }
+
+        private static void Prefix(MaintenanceRoom __instance, int itemMasterID)
         {
             try
             {
                 var fs = Patches.GetFeatureState();
                 if (fs == null || !fs.ForceBuy)
-                    return true;
+                    return;
 
-                MaintenanceRoom maintenanceRoom = __instance.VRoom as MaintenanceRoom;
-                if (maintenanceRoom == null)
-                {
-                    __result = MsgErrorCode.InvalidRoomType;
-                    return false;
-                }
-
-                ItemElement itemElement = maintenanceRoom.GetNewItemElement(itemMasterID, false, 1, 0, 0);
-                if (itemElement == null)
-                {
-                    __result = MsgErrorCode.ItemNotFound;
-                    return false;
-                }
-
-                __instance.InventoryControlUnit.HandleAddItem(itemElement, out _, true, true);
-                __instance.SendToMe(new BuyItemRes(hashCode) { remainCurrency = maintenanceRoom.Currency });
-                __instance.SendInSight(new BuyItemSig { itemMasterID = itemMasterID, machineIndex = machineIndex }, false);
-
-                __result = MsgErrorCode.Success;
-                return false;
+                ReflectionHelper.InvokeMethod(__instance, "AddCurrency", int.MaxValue / 2);
             }
             catch (Exception ex)
             {
-                MelonLogger.Error($"Force buy patch error: {ex.Message}");
-                __result = MsgErrorCode.InvalidErrorCode;
-                return false;
+                MelonLogger.Error($"MaintenanceRoomBuyItemForceBuyPatch error: {ex.Message}");
             }
         }
     }
@@ -481,7 +473,7 @@ namespace Mimesis_Mod_Menu.Core
         {
             try
             {
-                return AccessTools.Method(typeof(MaintenanceRoom), "BuyItem", new Type[] { typeof(int), typeof(VCreature) });
+                return AccessTools.Method(typeof(MaintenanceRoom), "BuyItem", new Type[] { typeof(int), typeof(PosWithRot) });
             }
             catch (Exception ex)
             {
@@ -490,7 +482,7 @@ namespace Mimesis_Mod_Menu.Core
             }
         }
 
-        private static void Postfix(MaintenanceRoom __instance, int itemMasterID, VCreature creature, ref MsgErrorCode __result)
+        private static void Postfix(MaintenanceRoom __instance, int itemMasterID, PosWithRot pos, ref MsgErrorCode __result)
         {
             try
             {

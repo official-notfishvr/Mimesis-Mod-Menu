@@ -11,6 +11,7 @@ using ReluProtocol.Enum;
 using shadcnui.GUIComponents.Core;
 using shadcnui.GUIComponents.Core.Base;
 using shadcnui.GUIComponents.Core.Styling;
+using shadcnui.GUIComponents.Core.Utils;
 using shadcnui.GUIComponents.Layout;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -231,7 +232,13 @@ namespace Mimesis_Mod_Menu.Core
                 return;
             }
 
-            currentTab = guiHelper.VerticalTabs(tabs.Select(t => t.Name).ToArray(), currentTab, DrawActiveTab, maxLines: 1);
+            currentTab = guiHelper.Tabs()
+                .Items(tabs.Select(t => t.Name).ToArray())
+                .SelectedIndex(currentTab)
+                .Content(DrawActiveTab)
+                .MaxLines(1)
+                .Side(TabSide.Left)
+                .Render();
 
             guiHelper.EndGUI();
             GUI.DragWindow();
@@ -520,7 +527,7 @@ namespace Mimesis_Mod_Menu.Core
         private void DrawCard(string title, Action content)
         {
             guiHelper.BeginCard(width: -1, height: -1);
-            guiHelper.CardTitle(title);
+            guiHelper.Heading(title);
             guiHelper.CardContent(content);
             guiHelper.EndCard();
         }
@@ -540,7 +547,7 @@ namespace Mimesis_Mod_Menu.Core
         private void DrawSlider(string label, Action<float> onChange, float value, float min, float max, string suffix)
         {
             guiHelper.Label(label);
-            float newValue = guiHelper.Slider(value, min, max);
+            float newValue = guiHelper.Slider(value).Range(min, max).ShowValue(false).Render();
             if (newValue != value)
             {
                 onChange(newValue);

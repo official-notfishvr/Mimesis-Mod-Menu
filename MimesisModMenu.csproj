@@ -7,6 +7,11 @@
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     </PropertyGroup>
     <ItemGroup>
+      <Compile Remove="Help\**" />
+      <EmbeddedResource Remove="Help\**" />
+      <None Remove="Help\**" />
+    </ItemGroup>
+    <ItemGroup>
         <Reference Include="0Harmony">
             <HintPath>$(BepInExAssemblyPath)\0Harmony.dll</HintPath>
         </Reference>
@@ -30,9 +35,6 @@
         </Reference>
         <Reference Include="Autodesk.Fbx.BuildTestAssets">
             <HintPath>$(GameAssemblyPath)\Autodesk.Fbx.BuildTestAssets.dll</HintPath>
-        </Reference>
-        <Reference Include="CodeStage.Maintainer.Demo">
-            <HintPath>$(GameAssemblyPath)\CodeStage.Maintainer.Demo.dll</HintPath>
         </Reference>
         <Reference Include="com.krafton.gpp.sdk.unity">
             <HintPath>$(GameAssemblyPath)\com.krafton.gpp.sdk.unity.dll</HintPath>
@@ -121,38 +123,8 @@
         <Reference Include="MemoryPack.Core">
             <HintPath>$(GameAssemblyPath)\MemoryPack.Core.dll</HintPath>
         </Reference>
-        <Reference Include="Microsoft.Extensions.Configuration">
-            <HintPath>$(GameAssemblyPath)\Microsoft.Extensions.Configuration.dll</HintPath>
-        </Reference>
-        <Reference Include="Microsoft.Extensions.Configuration.Abstractions">
-            <HintPath>$(GameAssemblyPath)\Microsoft.Extensions.Configuration.Abstractions.dll</HintPath>
-        </Reference>
-        <Reference Include="Microsoft.Extensions.Configuration.Binder">
-            <HintPath>$(GameAssemblyPath)\Microsoft.Extensions.Configuration.Binder.dll</HintPath>
-        </Reference>
-        <Reference Include="Microsoft.Extensions.DependencyInjection">
-            <HintPath>$(GameAssemblyPath)\Microsoft.Extensions.DependencyInjection.dll</HintPath>
-        </Reference>
-        <Reference Include="Microsoft.Extensions.DependencyInjection.Abstractions">
-            <HintPath>$(GameAssemblyPath)\Microsoft.Extensions.DependencyInjection.Abstractions.dll</HintPath>
-        </Reference>
-        <Reference Include="Microsoft.Extensions.Http">
-            <HintPath>$(GameAssemblyPath)\Microsoft.Extensions.Http.dll</HintPath>
-        </Reference>
-        <Reference Include="Microsoft.Extensions.Logging">
-            <HintPath>$(GameAssemblyPath)\Microsoft.Extensions.Logging.dll</HintPath>
-        </Reference>
         <Reference Include="Microsoft.Extensions.Logging.Abstractions">
             <HintPath>$(GameAssemblyPath)\Microsoft.Extensions.Logging.Abstractions.dll</HintPath>
-        </Reference>
-        <Reference Include="Microsoft.Extensions.ObjectPool">
-            <HintPath>$(GameAssemblyPath)\Microsoft.Extensions.ObjectPool.dll</HintPath>
-        </Reference>
-        <Reference Include="Microsoft.Extensions.Options">
-            <HintPath>$(GameAssemblyPath)\Microsoft.Extensions.Options.dll</HintPath>
-        </Reference>
-        <Reference Include="Microsoft.Extensions.Primitives">
-            <HintPath>$(GameAssemblyPath)\Microsoft.Extensions.Primitives.dll</HintPath>
         </Reference>
         <Reference Include="Mono.Cecil">
             <HintPath>$(BepInExAssemblyPath)\Mono.Cecil.dll</HintPath>
@@ -181,12 +153,6 @@
         <Reference Include="Newtonsoft.Json">
             <HintPath>$(GameAssemblyPath)\Newtonsoft.Json.dll</HintPath>
         </Reference>
-        <Reference Include="NonConvexCollider">
-            <HintPath>$(GameAssemblyPath)\NonConvexCollider.dll</HintPath>
-        </Reference>
-        <Reference Include="NonConvexColliderRuntimeAPI">
-            <HintPath>$(GameAssemblyPath)\NonConvexColliderRuntimeAPI.dll</HintPath>
-        </Reference>
         <Reference Include="OccaSoftware.Buto.Demo">
             <HintPath>$(GameAssemblyPath)\OccaSoftware.Buto.Demo.dll</HintPath>
         </Reference>
@@ -196,17 +162,8 @@
         <Reference Include="OccaSoftware.Buto.Shaders">
             <HintPath>$(GameAssemblyPath)\OccaSoftware.Buto.Shaders.dll</HintPath>
         </Reference>
-        <Reference Include="prometheus-net.DotNetRuntime">
-            <HintPath>$(GameAssemblyPath)\prometheus-net.DotNetRuntime.dll</HintPath>
-        </Reference>
-        <Reference Include="Prometheus.NetStandard">
-            <HintPath>$(GameAssemblyPath)\Prometheus.NetStandard.dll</HintPath>
-        </Reference>
         <Reference Include="RTLTMPro">
             <HintPath>$(GameAssemblyPath)\RTLTMPro.dll</HintPath>
-        </Reference>
-        <Reference Include="RuntimeTestAssembly">
-            <HintPath>$(GameAssemblyPath)\RuntimeTestAssembly.dll</HintPath>
         </Reference>
         <Reference Include="sc.posteffects.runtime">
             <HintPath>$(GameAssemblyPath)\sc.posteffects.runtime.dll</HintPath>
@@ -268,12 +225,6 @@
         <Reference Include="Unity.Multiplayer.Center.Common">
             <HintPath>$(GameAssemblyPath)\Unity.Multiplayer.Center.Common.dll</HintPath>
         </Reference>
-        <Reference Include="Unity.Multiplayer.Playmode">
-            <HintPath>$(GameAssemblyPath)\Unity.Multiplayer.Playmode.dll</HintPath>
-        </Reference>
-        <Reference Include="Unity.Multiplayer.Playmode.Common.Runtime">
-            <HintPath>$(GameAssemblyPath)\Unity.Multiplayer.Playmode.Common.Runtime.dll</HintPath>
-        </Reference>
         <Reference Include="Unity.Multiplayer.Tools.Adapters">
             <HintPath>$(GameAssemblyPath)\Unity.Multiplayer.Tools.Adapters.dll</HintPath>
         </Reference>
@@ -316,9 +267,6 @@
         <Reference Include="Unity.Multiplayer.Tools.NetworkSolutionInterface">
             <HintPath>$(GameAssemblyPath)\Unity.Multiplayer.Tools.NetworkSolutionInterface.dll</HintPath>
         </Reference>
-        <Reference Include="Unity.Polybrush">
-            <HintPath>$(GameAssemblyPath)\Unity.Polybrush.dll</HintPath>
-        </Reference>
         <Reference Include="Unity.Postprocessing.Runtime">
             <HintPath>$(GameAssemblyPath)\Unity.Postprocessing.Runtime.dll</HintPath>
         </Reference>
@@ -330,9 +278,6 @@
         </Reference>
         <Reference Include="Unity.Recorder.Base">
             <HintPath>$(GameAssemblyPath)\Unity.Recorder.Base.dll</HintPath>
-        </Reference>
-        <Reference Include="Unity.Rendering.LightTransport.Runtime">
-            <HintPath>$(GameAssemblyPath)\Unity.Rendering.LightTransport.Runtime.dll</HintPath>
         </Reference>
         <Reference Include="Unity.RenderPipeline.Universal.ShaderLibrary">
             <HintPath>$(GameAssemblyPath)\Unity.RenderPipeline.Universal.ShaderLibrary.dll</HintPath>
@@ -613,9 +558,6 @@
         <Reference Include="UnityEngine.UnityCurlModule">
             <HintPath>$(GameAssemblyPath)\UnityEngine.UnityCurlModule.dll</HintPath>
         </Reference>
-        <Reference Include="UnityEngine.UnityTestProtocolModule">
-            <HintPath>$(GameAssemblyPath)\UnityEngine.UnityTestProtocolModule.dll</HintPath>
-        </Reference>
         <Reference Include="UnityEngine.UnityWebRequestAssetBundleModule">
             <HintPath>$(GameAssemblyPath)\UnityEngine.UnityWebRequestAssetBundleModule.dll</HintPath>
         </Reference>
@@ -654,9 +596,6 @@
         </Reference>
         <Reference Include="VorbisPluginImpl">
             <HintPath>$(GameAssemblyPath)\VorbisPluginImpl.dll</HintPath>
-        </Reference>
-        <Reference Include="websocket-sharp">
-            <HintPath>$(GameAssemblyPath)\websocket-sharp.dll</HintPath>
         </Reference>
         <Reference Include="zxing.unity">
             <HintPath>$(GameAssemblyPath)\zxing.unity.dll</HintPath>
